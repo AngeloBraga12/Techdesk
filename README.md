@@ -1,44 +1,72 @@
 # TechDesk
 
-SaaS de gestão para assistências técnicas de informática.
+TechDesk é uma aplicação SaaS de gestão para assistências técnicas, criada como projeto de portfólio com foco em operação real de bancada.
 
-O TechDesk foi criado como um projeto de portfólio com foco em problemas reais de operação: cadastro de clientes, equipamentos, ordens de serviço, diagnóstico, orçamento e acompanhamento do ciclo de atendimento.
+A aplicação organiza clientes, equipamentos e ordens de serviço em um fluxo único, permitindo acompanhar problemas relatados, diagnóstico, orçamento e status do atendimento.
 
-## Objetivo
+## O que já funciona
 
-Construir uma aplicação próxima de um produto real, evoluindo de uma experiência frontend para uma arquitetura full-stack com API, banco de dados e autenticação.
+- Dashboard com indicadores operacionais
+- Cadastro de clientes
+- Cadastro de equipamentos vinculados a clientes
+- Criação e edição de ordens de serviço
+- Relacionamento entre cliente, equipamento e OS
+- Busca e filtro por status
+- Avanço de status da ordem
+- Exclusão de ordens com confirmação
+- Persistência local com `localStorage`
+- Interface responsiva
+- Componentes React separados por responsabilidade
+- TypeScript para modelagem do domínio
+- GitHub Actions para validação do build
 
-## Roadmap
+## Stack atual
 
-- [x] Estrutura inicial do projeto
-- [ ] Dashboard operacional
-- [ ] Clientes e equipamentos
-- [ ] Ordens de serviço
-- [ ] Diagnóstico e orçamento
-- [ ] Histórico e filtros
-- [ ] Persistência no frontend
-- [ ] API REST
-- [ ] PostgreSQL + Prisma
-- [ ] Autenticação e autorização
-- [ ] Testes automatizados
-- [ ] Deploy
+- React
+- TypeScript
+- Vite
+- CSS
+- localStorage
+- GitHub Actions
 
-## Stack planejada
+## Arquitetura atual
 
-React, TypeScript, Vite, Node.js, API REST, PostgreSQL, Prisma e GitHub Actions.
+```text
+src/
+├── components/
+│   ├── Customers.tsx
+│   ├── Dashboard.tsx
+│   ├── Equipment.tsx
+│   ├── OrderForm.tsx
+│   └── ServiceOrders.tsx
+├── data/
+│   └── mock.ts
+├── utils/
+│   └── storage.ts
+├── App.tsx
+├── styles.css
+└── types.ts
+```
 
-## Princípios
+A persistência local é intencional nesta etapa. O projeto não finge ter backend onde não existe backend, porque chamar `localStorage` de microserviço seria uma contribuição especialmente ruim para a indústria de software.
 
-- Interface responsiva e acessível
-- Componentes reutilizáveis
-- Tipagem forte
-- Separação de responsabilidades
-- Validação de dados
-- Commits pequenos e rastreáveis
-- Documentação clara
+## Próximas evoluções
+
+1. API REST com Node.js e TypeScript
+2. PostgreSQL + Prisma
+3. Autenticação e autorização por usuário
+4. Histórico completo das ordens
+5. Testes unitários e de integração
+6. Upload de anexos e evidências técnicas
+7. Relatórios operacionais
+8. Deploy separado do ambiente de portfólio
+
+## Objetivo de portfólio
+
+O TechDesk demonstra evolução de um frontend funcional para uma arquitetura de produto, com domínio explícito, componentes reutilizáveis, persistência, formulários e fluxo CRUD. A próxima etapa é transformar a camada local em uma API real sem alterar o modelo de negócio da aplicação.
 
 ## Autor
 
-Angelo Braga — Desenvolvedor Web · Front-end · Técnico em Informática
+Angelo Braga · Desenvolvedor Web / Front-end · Técnico em Informática
 
 [GitHub](https://github.com/AngeloBraga12) · [LinkedIn](https://www.linkedin.com/in/angelo-braga-5747b4192)
