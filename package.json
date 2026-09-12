@@ -1,1 +1,35 @@
-{"name":"techdesk","private":true,"version":"1.1.0","type":"module","scripts":{"dev":"vite","build":"tsc --noEmit && tsc -p tsconfig.server.json --noEmit && vite build","lint":"tsc --noEmit && tsc -p tsconfig.server.json --noEmit","dev:all":"concurrently \"vite\" \"tsx watch server/index.ts\"","server":"tsx server/index.ts","server:dev":"tsx watch server/index.ts","preview":"vite preview"},"dependencies":{"@vitejs/plugin-react":"^4.3.4","cors":"^2.8.5","express":"^5.1.0","react":"^18.3.1","react-dom":"^18.3.1","typescript":"^5.6.3","vite":"^5.4.10"},"devDependencies":{"@types/cors":"^2.8.17","@types/express":"^5.0.1","@types/node":"^22.10.2","concurrently":"^9.1.0","eslint":"^9.15.0","tsx":"^4.19.2","typescript-eslint":"^8.15.0"}}
+{
+  "name": "techdesk",
+  "private": true,
+  "version": "1.1.1",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit && vite build",
+    "lint": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
+    "dev:all": "concurrently \"vite\" \"tsx watch server/index.ts\"",
+    "server": "tsx server/index.ts",
+    "server:dev": "tsx watch server/index.ts",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.17",
+    "@types/express": "^5.0.1",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "concurrently": "^9.1.0",
+    "eslint": "^9.15.0",
+    "tsx": "^4.19.2",
+    "typescript-eslint": "^8.15.0"
+  }
+}
