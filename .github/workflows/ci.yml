@@ -16,3 +16,30 @@ jobs:
           node-version: 22
       - run: npm install
       - run: npm run build
+      - name: Start API
+        run: npm run server > /tmp/techdesk-api.log 2>&1 &
+      - name: Test API health and read endpoints
+        run: |
+          for i in {1..20}; do
+            if curl --fail --silent http://localhost:3001/api/health > /tmp/health.json; then break; fi
+            sleep 1
+          done
+          grep -q '"status":"ok"' /tmp/health.json
+          curl --fail --silent http://localhost:3001/api/customers | grep -q 'Maria Souza'
+          curl --fail --silent http://localhost:3001/api/equipment | grep -q 'Dell'
+          curl --fail --silent http://localhost:3001/api/orders | grep -q '1001'
+      - name: Test API create, update and delete
+        run: |
+          customer=$(curl --fail --silent --request POST http://localhost:3001/api/customers \
+            --header 'Content-Type: application/json' \
+            --data '{"name":"CI Test","phone":"(12) 90000-0000","email":"ci@example.com"}')
+          customer_id=$(node -e "console.log(JSON.parse(process.argv[1]).id)" "$customer")
+          test -n "$customer_id"
+
+          updated=$(curl --fail --silent --request PUT "http://localhost:3001/api/customers/$customer_id" \
+            --header 'Content-Type: application/json' \
+            --data '{"name":"CI Test Updated"}')
+          echo "$updated" | grep -q 'CI Test Updated'
+
+          curl --fail --silent --request DELETE "http://localhost:3001/api/customers/$customer_id" -o /dev/null
+          if curl --silent --output /dev/null --write-out '%{http_code}' "http://localhost:3001/api/customers/$customer_id" | grep -q '^200$'; then exit 1; fi
