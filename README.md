@@ -18,6 +18,8 @@ A aplicação organiza clientes, equipamentos e ordens de serviço em um fluxo �
 - Interface responsiva
 - Componentes React separados por responsabilidade
 - TypeScript para modelagem do domínio
+- API REST inicial em Node.js + Express
+- Endpoint de health check e endpoints CRUD iniciais
 - GitHub Actions para validação do build
 
 ## Stack atual
@@ -25,11 +27,13 @@ A aplicação organiza clientes, equipamentos e ordens de serviço em um fluxo �
 - React
 - TypeScript
 - Vite
+- Node.js
+- Express
 - CSS
 - localStorage
 - GitHub Actions
 
-## Arquitetura atual
+## Arquitetura
 
 ```text
 src/
@@ -46,24 +50,52 @@ src/
 ├── App.tsx
 ├── styles.css
 └── types.ts
+
+server/
+├── index.ts
+└── README.md
 ```
 
-A persistência local é intencional nesta etapa. O projeto não finge ter backend onde não existe backend, porque chamar `localStorage` de microserviço seria uma contribuição especialmente ruim para a indústria de software.
+A persistência local continua sendo usada pelo frontend nesta etapa. A API já existe como uma camada independente e atualmente mantém seus dados em memória. O projeto não apresenta armazenamento temporário como se fosse banco de produção.
 
-## Próximas evoluções
+## API local
 
-1. API REST com Node.js e TypeScript
-2. PostgreSQL + Prisma
-3. Autenticação e autorização por usuário
-4. Histórico completo das ordens
-5. Testes unitários e de integração
-6. Upload de anexos e evidências técnicas
-7. Relatórios operacionais
-8. Deploy separado do ambiente de portfólio
+```bash
+npm install
+npm run server
+```
+
+Servidor: `http://localhost:3001`
+
+Endpoints atuais:
+
+- `GET /api/health`
+- `GET /api/customers`
+- `GET /api/equipment`
+- `GET /api/orders`
+- `POST /api/customers`
+- `POST /api/equipment`
+- `POST /api/orders`
+
+## Roadmap
+
+- [x] Frontend operacional
+- [x] Domínio tipado
+- [x] CRUD local
+- [x] API REST inicial
+- [ ] Conectar frontend à API
+- [ ] PostgreSQL + Prisma
+- [ ] Validação centralizada
+- [ ] Autenticação e autorização
+- [ ] Histórico completo das ordens
+- [ ] Testes unitários e de integração
+- [ ] Upload de anexos e evidências técnicas
+- [ ] Relatórios operacionais
+- [ ] Deploy separado do ambiente de portfólio
 
 ## Objetivo de portfólio
 
-O TechDesk demonstra evolução de um frontend funcional para uma arquitetura de produto, com domínio explícito, componentes reutilizáveis, persistência, formulários e fluxo CRUD. A próxima etapa é transformar a camada local em uma API real sem alterar o modelo de negócio da aplicação.
+O TechDesk demonstra evolução de um frontend funcional para uma arquitetura de produto, com domínio explícito, componentes reutilizáveis, persistência, formulários, fluxo CRUD e uma API REST inicial. As próximas etapas substituem a persistência temporária por infraestrutura real sem mudar o modelo de negócio da aplicação.
 
 ## Autor
 
