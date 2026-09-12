@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: techdesk-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: techdesk
+      POSTGRES_USER: techdesk
+      POSTGRES_PASSWORD: techdesk_dev_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - techdesk_postgres_data:/var/lib/postgresql/data
+
+volumes:
+  techdesk_postgres_data:
