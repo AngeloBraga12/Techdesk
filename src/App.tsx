@@ -6,6 +6,7 @@ import OrderForm from './components/OrderForm'
 import ServiceOrders from './components/ServiceOrders'
 import { customers as seedCustomers, equipment as seedEquipment, serviceOrders as seedOrders } from './data/mock'
 import { readStorage, writeStorage } from './utils/storage'
+import { api } from './services/api'
 import type { Customer, Equipment as EquipmentType, OrderStatus, ServiceOrder } from './types'
 
 type View = 'dashboard' | 'orders' | 'customers' | 'equipment'
@@ -26,15 +27,95 @@ export default function App() {
   useEffect(() => writeStorage(ordersKey, orders), [orders])
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(''), 2500); return () => window.clearTimeout(timer) }, [toast])
 
-  function saveOrder(order: ServiceOrder) {
-    if (order.id) setOrders(current => current.map(item => item.id === order.id ? order : item))
-    else setOrders(current => [{ ...order, id: Math.max(...current.map(item => item.id), 1000) + 1 }, ...current])
-    setOrderForm(false); setToast(order.id ? 'Ordem atualizada' : 'Ordem de serviço criada'); setView('orders')
+  useEffect(() => {
+    let active = true
+    async function hydrateFromApi() {
+      try {
+        await api.health()
+        const [remoteCustomers, remoteEquipment, remoteOrders] = await Promise.all([
+          api.customers.list(),
+          api.equipment.list(),
+          api.orders.list(),
+        ])
+        if (!active) return
+        setCustomers(remoteCustomers)
+        setEquipment(remoteEquipment)
+        setOrders(remoteOrders)
+        setToast('API conectada')
+      } catch {
+        if (active) setToast('API indisponível. Usando dados locais.')
+      }
+    }
+    void hydrateFromApi()
+    return () => { active = false }
+  }, [])
+
+  async function saveOrder(order: ServiceOrder) {
+    try {
+      if (order.id) {
+        const saved = await api.orders.update(order.id, order)
+        setOrders(current => current.map(item => item.id === saved.id ? saved : item))
+      } else {
+        const { id: _id, ...payload } = order
+        const saved = await api.orders.create(payload)
+        setOrders(current => [saved, ...current])
+      }
+      setToast(order.id ? 'Ordem atualizada' : 'Ordem de serviço criada')
+    } catch {
+      if (order.id) setOrders(current => current.map(item => item.id === order.id ? order : item))
+      else setOrders(current => [{ ...order, id: Math.max(...current.map(item => item.id), 1000) + 1 }, ...current])
+      setToast('API indisponível. Alteração salva localmente.')
+    }
+    setOrderForm(false)
+    setView('orders')
   }
-  function deleteOrder(id: number) { if (window.confirm(`Excluir a OS #${id}?`)) { setOrders(current => current.filter(item => item.id !== id)); setToast('Ordem removida') } }
-  function updateStatus(id: number, status: OrderStatus) { setOrders(current => current.map(item => item.id === id ? { ...item, status, updatedAt: 'Agora' } : item)); setToast('Status atualizado') }
-  function addCustomer(customer: Customer) { setCustomers(current => [customer, ...current]); setToast('Cliente cadastrado') }
-  function addEquipment(item: EquipmentType) { setEquipment(current => [item, ...current]); setToast('Equipamento cadastrado') }
+
+  async function deleteOrder(id: number) {
+    if (!window.confirm(`Excluir a OS #${id}?`)) return
+    try {
+      await api.orders.remove(id)
+      setOrders(current => current.filter(item => item.id !== id))
+      setToast('Ordem removida')
+    } catch {
+      setOrders(current => current.filter(item => item.id !== id))
+      setToast('API indisponível. Ordem removida localmente.')
+    }
+  }
+
+  async function updateStatus(id: number, status: OrderStatus) {
+    try {
+      const saved = await api.orders.update(id, { status })
+      setOrders(current => current.map(item => item.id === saved.id ? saved : item))
+      setToast('Status atualizado')
+    } catch {
+      setOrders(current => current.map(item => item.id === id ? { ...item, status, updatedAt: new Date().toISOString() } : item))
+      setToast('API indisponível. Status atualizado localmente.')
+    }
+  }
+
+  async function addCustomer(customer: Customer) {
+    try {
+      const { id: _id, createdAt: _createdAt, ...payload } = customer
+      const saved = await api.customers.create(payload)
+      setCustomers(current => [saved, ...current])
+      setToast('Cliente cadastrado')
+    } catch {
+      setCustomers(current => [customer, ...current])
+      setToast('API indisponível. Cliente salvo localmente.')
+    }
+  }
+
+  async function addEquipment(item: EquipmentType) {
+    try {
+      const { id: _id, ...payload } = item
+      const saved = await api.equipment.create(payload)
+      setEquipment(current => [saved, ...current])
+      setToast('Equipamento cadastrado')
+    } catch {
+      setEquipment(current => [item, ...current])
+      setToast('API indisponível. Equipamento salvo localmente.')
+    }
+  }
 
   const nav = (next: View) => setView(next)
   const pageTitle = { dashboard: 'Visão geral', orders: 'Ordens de serviço', customers: 'Clientes', equipment: 'Equipamentos' }[view]
