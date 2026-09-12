@@ -1,0 +1,71 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Customer {
+  id          String         @id @default(uuid())
+  name        String
+  phone       String
+  email       String?
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  equipment   Equipment[]
+  orders      ServiceOrder[]
+
+  @@index([name])
+  @@index([phone])
+}
+
+model Equipment {
+  id                String         @id @default(uuid())
+  customerId        String
+  type              String
+  brand             String
+  model             String
+  serialNumber      String?
+  problemDescription String
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  customer          Customer       @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  orders            ServiceOrder[]
+
+  @@index([customerId])
+  @@index([serialNumber])
+}
+
+model ServiceOrder {
+  id          Int                    @id @default(autoincrement())
+  customerId  String
+  equipmentId String
+  issue       String
+  diagnosis   String
+  estimate    Decimal                  @default(0) @db.Decimal(12, 2)
+  status      String
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+  customer    Customer                @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  equipment   Equipment               @relation(fields: [equipmentId], references: [id], onDelete: Restrict)
+  history     ServiceOrderHistory[]
+
+  @@index([customerId])
+  @@index([equipmentId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+model ServiceOrderHistory {
+  id           String       @id @default(uuid())
+  serviceOrderId Int
+  fromStatus   String?
+  toStatus     String
+  note         String?
+  createdAt    DateTime     @default(now())
+  serviceOrder ServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+
+  @@index([serviceOrderId, createdAt])
+}
