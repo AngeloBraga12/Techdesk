@@ -73,6 +73,8 @@ jobs:
             status=$(tr -d '\n' < "/tmp/race-$i.status")
             test "$status" = "201"
           done
+          echo "ADMIN_EMAIL=$admin_email" >> "$GITHUB_ENV"
+          echo "RACE_PASSWORD=$race_password" >> "$GITHUB_ENV"
           status=$(curl --silent --output /tmp/unauth.json --write-out '%{http_code}' http://localhost:3001/api/customers)
           assert_status 401 "$status"
           grep -q 'UNAUTHORIZED' /tmp/unauth.json
@@ -101,7 +103,7 @@ jobs:
           first_token=$(awk '$6 == "techdesk_session" {print $7}' /tmp/admin.cookies)
           test -n "$first_token"
           test "${#first_token}" -ge 40
-          curl --silent --cookie-jar /tmp/admin-second.cookies --request POST http://localhost:3001/api/auth/login --header 'Content-Type: application/json' --data "{\"email\":\"$admin_email\",\"password\":\"$race_password\"}" -o /tmp/admin-second-login.json
+          curl --silent --cookie-jar /tmp/admin-second.cookies --request POST http://localhost:3001/api/auth/login --header 'Content-Type: application/json' --data "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$RACE_PASSWORD\"}" -o /tmp/admin-second-login.json
           second_token=$(awk '$6 == "techdesk_session" {print $7}' /tmp/admin-second.cookies)
           test -n "$second_token"
           test "$first_token" != "$second_token"
@@ -121,7 +123,7 @@ jobs:
         run: |
           set -euo pipefail
           assert_status() { test "$1" = "$2" || { echo "Expected HTTP $1, got $2"; exit 1; }; }
-          curl --silent --cookie-jar /tmp/admin-fresh.cookies --request POST http://localhost:3001/api/auth/login --header 'Content-Type: application/json' --data "{\"email\":\"$admin_email\",\"password\":\"$race_password\"}" -o /tmp/admin-fresh.json
+          curl --silent --cookie-jar /tmp/admin-fresh.cookies --request POST http://localhost:3001/api/auth/login --header 'Content-Type: application/json' --data "{\"email\":\"$ADMIN_EMAIL\",\"password\":\"$RACE_PASSWORD\"}" -o /tmp/admin-fresh.json
           customer=$(curl --fail --silent --request POST http://localhost:3001/api/customers --cookie /tmp/admin-fresh.cookies --header 'Content-Type: application/json' --data '{"name":"\u0027); DROP TABLE \"Customer\"; --","phone":"(12) 90000-0000","email":"security@example.com"}')
           customer_id=$(node -e "console.log(JSON.parse(process.argv[1]).id)" "$customer")
           test -n "$customer_id"
