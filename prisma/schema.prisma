@@ -7,6 +7,39 @@ datasource db {
   provider = "postgresql"
 }
 
+enum UserRole {
+  ADMIN
+  TECHNICIAN
+}
+
+model User {
+  id           String    @id @default(uuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         UserRole  @default(TECHNICIAN)
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  sessions     Session[]
+
+  @@index([role])
+  @@index([active])
+}
+
+model Session {
+  id         String   @id @default(uuid())
+  tokenHash  String   @unique
+  userId     String
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  lastUsedAt DateTime @default(now())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
 model Customer {
   id          String         @id @default(uuid())
   name        String
@@ -49,7 +82,7 @@ model ServiceOrder {
   createdAt   DateTime               @default(now())
   updatedAt   DateTime               @updatedAt
   customer    Customer               @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  equipment   Equipment               @relation(fields: [equipmentId], references: [id], onDelete: Restrict)
+  equipment   Equipment              @relation(fields: [equipmentId], references: [id], onDelete: Restrict)
   history     ServiceOrderHistory[]
 
   @@index([customerId])

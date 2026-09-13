@@ -1,6 +1,7 @@
 import express, { type ErrorRequestHandler, type Response } from 'express'
 import cors from 'cors'
 import { prisma } from './db.js'
+import { authenticate, registerAuthRoutes, requireRole } from './auth.js'
 import {
   validateCustomerCreate, validateCustomerUpdate, validateEquipmentCreate, validateEquipmentUpdate,
   validateOrderCreate, validateOrderUpdate, validateOrderIdParam, validateUuidParam,
@@ -27,6 +28,8 @@ app.use(express.json({ limit: '1mb', strict: true }))
 
 const badRequest = (res: Response, message: string) => res.status(400).json({ error: 'VALIDATION_ERROR', message })
 
+registerAuthRoutes(app)
+
 app.get('/api/health', async (_req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`
@@ -35,6 +38,8 @@ app.get('/api/health', async (_req, res) => {
     return res.status(503).json({ status: 'error', service: 'TechDesk API', database: 'unavailable' })
   }
 })
+
+app.use('/api', authenticate)
 
 app.get('/api/customers', async (_req, res) => res.json(await prisma.customer.findMany({ orderBy: { createdAt: 'desc' } })))
 app.get('/api/equipment', async (_req, res) => res.json(await prisma.equipment.findMany({ orderBy: { createdAt: 'desc' } })))
@@ -63,7 +68,7 @@ app.put('/api/customers/:id', async (req, res) => {
   }
 })
 
-app.delete('/api/customers/:id', async (req, res) => {
+app.delete('/api/customers/:id', requireRole('ADMIN'), async (req, res) => {
   if (!validateUuidParam(req.params.id)) return badRequest(res, 'ID de cliente inválido.')
   try {
     await prisma.customer.delete({ where: { id: req.params.id } })
@@ -98,7 +103,7 @@ app.put('/api/equipment/:id', async (req, res) => {
   }
 })
 
-app.delete('/api/equipment/:id', async (req, res) => {
+app.delete('/api/equipment/:id', requireRole('ADMIN'), async (req, res) => {
   if (!validateUuidParam(req.params.id)) return badRequest(res, 'ID de equipamento inválido.')
   try {
     await prisma.equipment.delete({ where: { id: req.params.id } })
@@ -152,7 +157,7 @@ app.put('/api/orders/:id', async (req, res) => {
   return res.json({ ...order, estimate: Number(order.estimate) })
 })
 
-app.delete('/api/orders/:id', async (req, res) => {
+app.delete('/api/orders/:id', requireRole('ADMIN'), async (req, res) => {
   if (!validateOrderIdParam(req.params.id)) return badRequest(res, 'ID de ordem inválido.')
   try {
     await prisma.serviceOrder.delete({ where: { id: Number(req.params.id) } })
