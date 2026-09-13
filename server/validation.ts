@@ -2,13 +2,15 @@ export const orderStatuses = ['Orçamento', 'Em análise', 'Aprovado', 'Em repar
 export type OrderStatus = (typeof orderStatuses)[number]
 
 export type ValidationResult<T> = { ok: true; value: T } | { ok: false; message: string }
-
 type FieldSpec = { required?: boolean; max?: number; nullable?: boolean }
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
 function validateObject(body: unknown, specs: Record<string, FieldSpec>, partial = false): ValidationResult<Record<string, unknown>> {
   if (!isObject(body)) return { ok: false, message: 'Corpo da requisição deve ser um objeto JSON.' }
+  if (partial && Object.keys(body).length === 0) return { ok: false, message: 'Informe ao menos um campo para atualizar.' }
 
   for (const key of Object.keys(body)) {
     if (!Object.prototype.hasOwnProperty.call(specs, key)) return { ok: false, message: `Campo não permitido: ${key}.` }
@@ -42,19 +44,23 @@ const orderSpecs: Record<string, FieldSpec> = {
   customerId: { required: true, max: 36 }, equipmentId: { required: true, max: 36 }, issue: { required: true, max: 2000 }, diagnosis: { max: 4000 }, estimate: {}, status: {},
 }
 
-const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
-
-function validateCommon(result: ValidationResult<Record<string, unknown>>, email = true) {
+function validateCommon(result: ValidationResult<Record<string, unknown>>) {
   if (!result.ok) return result
-  if (email && result.value.email !== undefined && result.value.email !== null && !emailPattern.test(String(result.value.email))) return { ok: false as const, message: 'E-mail inválido.' }
+  if (result.value.email !== undefined && result.value.email !== null && !emailPattern.test(String(result.value.email))) return { ok: false as const, message: 'E-mail inválido.' }
   return result
 }
 
 export function validateCustomerCreate(body: unknown) { return validateCommon(validateObject(body, customerSpecs)) }
 export function validateCustomerUpdate(body: unknown) { return validateCommon(validateObject(body, customerSpecs, true)) }
-export function validateEquipmentCreate(body: unknown) { return validateObject(body, equipmentSpecs) }
-export function validateEquipmentUpdate(body: unknown) { return validateObject(body, equipmentSpecs, true) }
+
+function validateEquipmentBody(body: unknown, partial: boolean) {
+  const result = validateObject(body, equipmentSpecs, partial)
+  if (!result.ok) return result
+  if (result.value.customerId !== undefined && !uuidPattern.test(String(result.value.customerId))) return { ok: false as const, message: 'customerId inválido.' }
+  return result
+}
+export function validateEquipmentCreate(body: unknown) { return validateEquipmentBody(body, false) }
+export function validateEquipmentUpdate(body: unknown) { return validateEquipmentBody(body, true) }
 
 function validateOrderBody(body: unknown, partial: boolean): ValidationResult<Record<string, unknown>> {
   const result = validateObject(body, orderSpecs, partial)
@@ -73,6 +79,5 @@ function validateOrderBody(body: unknown, partial: boolean): ValidationResult<Re
 
 export function validateOrderCreate(body: unknown) { return validateOrderBody(body, false) }
 export function validateOrderUpdate(body: unknown) { return validateOrderBody(body, true) }
-
 export function validateUuidParam(id: string) { return uuidPattern.test(id) }
 export function validateOrderIdParam(id: string) { const value = Number(id); return Number.isInteger(value) && value > 0 }
