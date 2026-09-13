@@ -1,4 +1,4 @@
-import express, { type ErrorRequestHandler, type NextFunction, type Request, type Response } from 'express'
+import express, { type ErrorRequestHandler, type Response } from 'express'
 import cors from 'cors'
 import { prisma } from './db.js'
 import {
@@ -56,7 +56,7 @@ app.put('/api/customers/:id', async (req, res) => {
   const validation = validateCustomerUpdate(req.body)
   if (!validation.ok) return badRequest(res, validation.message)
   try {
-    return res.json(await prisma.customer.update({ where: { id: req.params.id }, data: validation.value }))
+    return res.json(await prisma.customer.update({ where: { id: req.params.id }, data: validation.value as Parameters<typeof prisma.customer.update>[0]['data'] }))
   } catch (error) {
     if (isPrismaNotFound(error)) return res.status(404).json({ error: 'NOT_FOUND', message: 'Cliente não encontrado.' })
     throw error
