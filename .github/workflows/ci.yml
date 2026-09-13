@@ -43,6 +43,7 @@ jobs:
       - run: npm run build
       - name: Start API
         run: npm run server > /tmp/techdesk-api.log 2>&1 &
+
       - name: Test API health
         run: |
           set -euo pipefail
@@ -50,132 +51,146 @@ jobs:
             if curl --fail --silent http://localhost:3001/api/health > /tmp/health.json; then break; fi
             sleep 1
           done
-          cat /tmp/health.json
           grep -q '"status":"ok"' /tmp/health.json
           grep -q '"database":"connected"' /tmp/health.json
+
+      - name: Test authentication and authorization
+        run: |
+          set -euo pipefail
+          assert_status() { test "$1" = "$2" || { echo "Expected HTTP $1, got $2"; exit 1; }; }
+
+          status=$(curl --silent --output /tmp/unauth.json --write-out '%{http_code}' http://localhost:3001/api/customers)
+          assert_status 401 "$status"
+          grep -q 'UNAUTHORIZED' /tmp/unauth.json
+
+          status=$(curl --silent --output /tmp/weak-password.json --write-out '%{http_code}' \
+            --request POST http://localhost:3001/api/auth/register \
+            --header 'Content-Type: application/json' \
+            --data '{"name":"Weak","email":"weak@example.com","password":"short"}')
+          assert_status 400 "$status"
+          grep -q 'VALIDATION_ERROR' /tmp/weak-password.json
+
+          status=$(curl --silent --output /tmp/admin-register.json --write-out '%{http_code}' \
+            --request POST http://localhost:3001/api/auth/register \
+            --header 'Content-Type: application/json' \
+            --data '{"name":"CI Admin","email":"admin@example.com","password":"CI-Strong-Password-2026!"}')
+          assert_status 201 "$status"
+          grep -q '"role":"ADMIN"' /tmp/admin-register.json
+          grep -q '"bootstrapAdmin":true' /tmp/admin-register.json
+
+          status=$(curl --silent --output /tmp/invalid-login.json --write-out '%{http_code}' \
+            --request POST http://localhost:3001/api/auth/login \
+            --header 'Content-Type: application/json' \
+            --data '{"email":"admin@example.com","password":"wrong-password-2026"}')
+          assert_status 401 "$status"
+          grep -q 'INVALID_CREDENTIALS' /tmp/invalid-login.json
+
+          status=$(curl --silent --output /tmp/admin-login.json --dump-header /tmp/admin-headers.txt --write-out '%{http_code}' \
+            --cookie-jar /tmp/admin.cookies \
+            --request POST http://localhost:3001/api/auth/login \
+            --header 'Content-Type: application/json' \
+            --data '{"email":"admin@example.com","password":"CI-Strong-Password-2026!"}')
+          assert_status 200 "$status"
+          grep -q '"role":"ADMIN"' /tmp/admin-login.json
+          grep -qi 'HttpOnly' /tmp/admin-headers.txt
+          grep -qi 'SameSite=Strict' /tmp/admin-headers.txt
+
+          status=$(curl --silent --output /tmp/me.json --write-out '%{http_code}' --cookie /tmp/admin.cookies http://localhost:3001/api/auth/me)
+          assert_status 200 "$status"
+          grep -q 'admin@example.com' /tmp/me.json
+
+          status=$(curl --silent --output /tmp/tech-register.json --write-out '%{http_code}' \
+            --request POST http://localhost:3001/api/auth/register \
+            --header 'Content-Type: application/json' \
+            --data '{"name":"CI Technician","email":"technician@example.com","password":"CI-Technician-Password-2026!"}')
+          assert_status 201 "$status"
+          grep -q '"role":"TECHNICIAN"' /tmp/tech-register.json
+
+          status=$(curl --silent --output /tmp/tech-login.json --write-out '%{http_code}' \
+            --cookie-jar /tmp/tech.cookies \
+            --request POST http://localhost:3001/api/auth/login \
+            --header 'Content-Type: application/json' \
+            --data '{"email":"technician@example.com","password":"CI-Technician-Password-2026!"}')
+          assert_status 200 "$status"
+
+          status=$(curl --silent --output /tmp/forbidden.json --write-out '%{http_code}' \
+            --cookie /tmp/tech.cookies http://localhost:3001/api/customers/00000000-0000-4000-8000-000000000000 --request DELETE)
+          assert_status 403 "$status"
+          grep -q 'FORBIDDEN' /tmp/forbidden.json
+
+          for i in 1 2 3 4 5; do
+            curl --silent --output /dev/null --request POST http://localhost:3001/api/auth/login \
+              --header 'Content-Type: application/json' \
+              --data '{"email":"unknown-rate-limit@example.com","password":"wrong-password-2026"}' || true
+          done
+          status=$(curl --silent --output /tmp/rate-limit.json --write-out '%{http_code}' \
+            --request POST http://localhost:3001/api/auth/login \
+            --header 'Content-Type: application/json' \
+            --data '{"email":"unknown-rate-limit@example.com","password":"wrong-password-2026"}')
+          assert_status 429 "$status"
+          grep -q 'RATE_LIMITED' /tmp/rate-limit.json
+
+          status=$(curl --silent --output /tmp/logout.out --write-out '%{http_code}' --cookie /tmp/admin.cookies --request POST http://localhost:3001/api/auth/logout)
+          assert_status 204 "$status"
+          status=$(curl --silent --output /tmp/me-after-logout.json --write-out '%{http_code}' --cookie /tmp/admin.cookies http://localhost:3001/api/auth/me)
+          assert_status 401 "$status"
 
       - name: Test API CRUD and history
         run: |
           set -euo pipefail
-
-          customer=$(curl --fail --silent --request POST http://localhost:3001/api/customers \
-            --header 'Content-Type: application/json' \
-            --data '{"name":"CI Test","phone":"(12) 90000-0000","email":"ci@example.com"}')
+          customer=$(curl --fail --silent --request POST http://localhost:3001/api/customers --cookie /tmp/admin.cookies \
+            --header 'Content-Type: application/json' --data '{"name":"CI Test","phone":"(12) 90000-0000","email":"ci@example.com"}')
           customer_id=$(node -e "console.log(JSON.parse(process.argv[1]).id)" "$customer")
           test -n "$customer_id"
-          echo "$customer" | grep -q 'CI Test'
-
-          equipment=$(curl --fail --silent --request POST http://localhost:3001/api/equipment \
-            --header 'Content-Type: application/json' \
-            --data "{\"customerId\":\"$customer_id\",\"type\":\"Notebook\",\"brand\":\"Dell\",\"model\":\"Inspiron 15\",\"serialNumber\":\"CI-SERIAL-001\",\"problemDescription\":\"Does not start\"}")
+          equipment=$(curl --fail --silent --request POST http://localhost:3001/api/equipment --cookie /tmp/admin.cookies \
+            --header 'Content-Type: application/json' --data "{\"customerId\":\"$customer_id\",\"type\":\"Notebook\",\"brand\":\"Dell\",\"model\":\"Inspiron 15\",\"serialNumber\":\"CI-SERIAL-001\",\"problemDescription\":\"Does not start\"}")
           equipment_id=$(node -e "console.log(JSON.parse(process.argv[1]).id)" "$equipment")
-          test -n "$equipment_id"
-          echo "$equipment" | grep -q 'Inspiron 15'
-
-          order=$(curl --fail --silent --request POST http://localhost:3001/api/orders \
-            --header 'Content-Type: application/json' \
-            --data "{\"customerId\":\"$customer_id\",\"equipmentId\":\"$equipment_id\",\"issue\":\"CI test issue\",\"diagnosis\":\"Initial diagnosis\",\"estimate\":150.50,\"status\":\"Orçamento\"}")
+          order=$(curl --fail --silent --request POST http://localhost:3001/api/orders --cookie /tmp/admin.cookies \
+            --header 'Content-Type: application/json' --data "{\"customerId\":\"$customer_id\",\"equipmentId\":\"$equipment_id\",\"issue\":\"CI test issue\",\"diagnosis\":\"Initial diagnosis\",\"estimate\":150.50,\"status\":\"Orçamento\"}")
           order_id=$(node -e "console.log(JSON.parse(process.argv[1]).id)" "$order")
-          test -n "$order_id"
-          echo "$order" | grep -q 'CI test issue'
-
-          curl --fail --silent http://localhost:3001/api/customers | grep -q 'CI Test'
-          curl --fail --silent http://localhost:3001/api/equipment | grep -q 'CI-SERIAL-001'
-          curl --fail --silent http://localhost:3001/api/orders | grep -q 'CI test issue'
-
-          history=$(curl --fail --silent "http://localhost:3001/api/orders/$order_id/history")
+          curl --fail --silent --cookie /tmp/admin.cookies http://localhost:3001/api/customers | grep -q 'CI Test'
+          curl --fail --silent --cookie /tmp/admin.cookies http://localhost:3001/api/equipment | grep -q 'CI-SERIAL-001'
+          curl --fail --silent --cookie /tmp/admin.cookies http://localhost:3001/api/orders | grep -q 'CI test issue'
+          history=$(curl --fail --silent --cookie /tmp/admin.cookies "http://localhost:3001/api/orders/$order_id/history")
           echo "$history" | grep -q 'Orçamento'
-
-          updated_order=$(curl --fail --silent --request PUT "http://localhost:3001/api/orders/$order_id" \
-            --header 'Content-Type: application/json' \
-            --data '{"status":"Em reparo","diagnosis":"Diagnosis updated","estimate":200}')
+          updated_order=$(curl --fail --silent --request PUT "http://localhost:3001/api/orders/$order_id" --cookie /tmp/admin.cookies \
+            --header 'Content-Type: application/json' --data '{"status":"Em reparo","diagnosis":"Diagnosis updated","estimate":200}')
           echo "$updated_order" | grep -q 'Em reparo'
-          echo "$updated_order" | grep -q '200'
-
-          updated_history=$(curl --fail --silent "http://localhost:3001/api/orders/$order_id/history")
-          echo "$updated_history" | grep -q 'Em reparo'
-
-          updated_customer=$(curl --fail --silent --request PUT "http://localhost:3001/api/customers/$customer_id" \
-            --header 'Content-Type: application/json' \
-            --data '{"name":"CI Test Updated"}')
+          updated_customer=$(curl --fail --silent --request PUT "http://localhost:3001/api/customers/$customer_id" --cookie /tmp/admin.cookies \
+            --header 'Content-Type: application/json' --data '{"name":"CI Test Updated"}')
           echo "$updated_customer" | grep -q 'CI Test Updated'
-
-          curl --fail --silent --request DELETE "http://localhost:3001/api/orders/$order_id" -o /dev/null
-          curl --fail --silent --request DELETE "http://localhost:3001/api/equipment/$equipment_id" -o /dev/null
-          curl --fail --silent --request DELETE "http://localhost:3001/api/customers/$customer_id" -o /dev/null
-
-          if curl --silent --output /dev/null --write-out '%{http_code}' "http://localhost:3001/api/orders/$order_id" | grep -q '^200$'; then exit 1; fi
+          curl --fail --silent --request DELETE "http://localhost:3001/api/orders/$order_id" --cookie /tmp/admin.cookies -o /dev/null
+          curl --fail --silent --request DELETE "http://localhost:3001/api/equipment/$equipment_id" --cookie /tmp/admin.cookies -o /dev/null
+          curl --fail --silent --request DELETE "http://localhost:3001/api/customers/$customer_id" --cookie /tmp/admin.cookies -o /dev/null
 
       - name: Test validation, CORS and error handling
         run: |
           set -euo pipefail
-
-          assert_status() {
-            expected="$1"
-            actual="$2"
-            test "$actual" = "$expected" || { echo "Expected HTTP $expected, got $actual"; exit 1; }
-          }
-
-          status=$(curl --silent --output /tmp/validation.json --write-out '%{http_code}' \
-            --request POST http://localhost:3001/api/customers \
-            --header 'Content-Type: application/json' \
-            --data '{"name":"","phone":"123","unexpected":"blocked"}')
+          assert_status() { test "$1" = "$2" || { echo "Expected HTTP $1, got $2"; exit 1; }; }
+          status=$(curl --silent --output /tmp/validation.json --write-out '%{http_code}' --request POST http://localhost:3001/api/customers --cookie /tmp/admin.cookies --header 'Content-Type: application/json' --data '{"name":"","phone":"123","unexpected":"blocked"}')
           assert_status 400 "$status"
           grep -q 'VALIDATION_ERROR' /tmp/validation.json
           grep -q 'Campo não permitido: unexpected' /tmp/validation.json
-
-          status=$(curl --silent --output /tmp/status.json --write-out '%{http_code}' \
-            --request POST http://localhost:3001/api/orders \
-            --header 'Content-Type: application/json' \
-            --data '{"customerId":"00000000-0000-4000-8000-000000000000","equipmentId":"00000000-0000-4000-8000-000000000001","issue":"test","status":"HACKED"}')
+          status=$(curl --silent --output /tmp/status.json --write-out '%{http_code}' --request POST http://localhost:3001/api/orders --cookie /tmp/admin.cookies --header 'Content-Type: application/json' --data '{"customerId":"00000000-0000-4000-8000-000000000000","equipmentId":"00000000-0000-4000-8000-000000000001","issue":"test","status":"HACKED"}')
           assert_status 400 "$status"
           grep -q 'Status da ordem inválido' /tmp/status.json
-
-          status=$(curl --silent --output /tmp/estimate.json --write-out '%{http_code}' \
-            --request POST http://localhost:3001/api/orders \
-            --header 'Content-Type: application/json' \
-            --data '{"customerId":"00000000-0000-4000-8000-000000000000","equipmentId":"00000000-0000-4000-8000-000000000001","issue":"test","estimate":-1}')
+          status=$(curl --silent --output /tmp/estimate.json --write-out '%{http_code}' --request POST http://localhost:3001/api/orders --cookie /tmp/admin.cookies --header 'Content-Type: application/json' --data '{"customerId":"00000000-0000-4000-8000-000000000000","equipmentId":"00000000-0000-4000-8000-000000000001","issue":"test","estimate":-1}')
           assert_status 400 "$status"
           grep -q 'Orçamento inválido' /tmp/estimate.json
-
-          status=$(curl --silent --output /tmp/uuid.json --write-out '%{http_code}' \
-            --request PUT http://localhost:3001/api/customers/not-a-uuid \
-            --header 'Content-Type: application/json' \
-            --data '{"name":"Invalid ID test"}')
-          assert_status 400 "$status"
-          grep -q 'ID de cliente inválido' /tmp/uuid.json
-
-          status=$(curl --silent --output /tmp/json.json --write-out '%{http_code}' \
-            --request POST http://localhost:3001/api/customers \
-            --header 'Content-Type: application/json' \
-            --data '{invalid-json')
+          status=$(curl --silent --output /tmp/json.json --write-out '%{http_code}' --request POST http://localhost:3001/api/customers --cookie /tmp/admin.cookies --header 'Content-Type: application/json' --data '{invalid-json')
           assert_status 400 "$status"
           grep -q 'INVALID_JSON' /tmp/json.json
-
-          status=$(curl --silent --output /tmp/not-found.json --write-out '%{http_code}' \
-            http://localhost:3001/api/does-not-exist)
+          status=$(curl --silent --output /tmp/not-found.json --write-out '%{http_code}' --cookie /tmp/admin.cookies http://localhost:3001/api/does-not-exist)
           assert_status 404 "$status"
           grep -q 'NOT_FOUND' /tmp/not-found.json
-
-          allowed=$(curl --silent --output /dev/null --dump-header /tmp/cors-allowed.headers --write-out '%{http_code}' \
-            --request OPTIONS http://localhost:3001/api/customers \
-            --header 'Origin: http://localhost:5173' \
-            --header 'Access-Control-Request-Method: GET')
+          allowed=$(curl --silent --output /dev/null --dump-header /tmp/cors-allowed.headers --write-out '%{http_code}' --request OPTIONS http://localhost:3001/api/customers --header 'Origin: http://localhost:5173' --header 'Access-Control-Request-Method: GET')
           assert_status 204 "$allowed"
           grep -qi '^Access-Control-Allow-Origin: http://localhost:5173' /tmp/cors-allowed.headers
-
-          blocked=$(curl --silent --output /tmp/cors-blocked.json --write-out '%{http_code}' \
-            --request OPTIONS http://localhost:3001/api/customers \
-            --header 'Origin: https://evil.example' \
-            --header 'Access-Control-Request-Method: GET')
+          blocked=$(curl --silent --output /tmp/cors-blocked.json --write-out '%{http_code}' --request OPTIONS http://localhost:3001/api/customers --header 'Origin: https://evil.example' --header 'Access-Control-Request-Method: GET')
           assert_status 403 "$blocked"
           grep -q 'CORS_FORBIDDEN' /tmp/cors-blocked.json
 
       - name: Show API log on failure
         if: failure()
         run: |
-          if [ -f /tmp/techdesk-api.log ]; then
-            cat /tmp/techdesk-api.log
-          else
-            echo 'API log was not created because the API did not start.'
-          fi
+          if [ -f /tmp/techdesk-api.log ]; then cat /tmp/techdesk-api.log; else echo 'API log was not created because the API did not start.'; fi

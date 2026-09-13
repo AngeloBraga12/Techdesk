@@ -1,9 +1,12 @@
 import type { Customer, Equipment, ServiceOrder } from '../types'
 
+export type AuthUser = { id: string; name: string; email: string; role: 'ADMIN' | 'TECHNICIAN' }
+
 const API_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:3001/api').replace(/\/$/, '')
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
+    credentials: 'include',
     headers: { 'Content-Type': 'application/json', ...(options?.headers ?? {}) },
     ...options,
   })
@@ -13,11 +16,18 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
     throw new Error(body?.message ?? `API error: ${response.status}`)
   }
 
+  if (response.status === 204) return undefined as T
   return response.json() as Promise<T>
 }
 
 export const api = {
-  health: () => request<{ status: string; service: string }>('/health'),
+  health: () => request<{ status: string; service: string; database?: string }>('/health'),
+  auth: {
+    me: () => request<{ user: AuthUser }>('/auth/me'),
+    login: (email: string, password: string) => request<{ user: AuthUser }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+    logout: () => request<void>('/auth/logout', { method: 'POST' }),
+    register: (name: string, email: string, password: string) => request<{ user: AuthUser; bootstrapAdmin: boolean }>('/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password }) }),
+  },
   customers: {
     list: () => request<Customer[]>('/customers'),
     create: (customer: Pick<Customer, 'name' | 'phone' | 'email'>) => request<Customer>('/customers', { method: 'POST', body: JSON.stringify(customer) }),
