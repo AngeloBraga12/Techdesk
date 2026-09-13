@@ -1,6 +1,7 @@
 import { createHash, randomBytes, scrypt as scryptCallback, timingSafeEqual } from 'node:crypto'
 import type { Express, NextFunction, Request, Response } from 'express'
 import { prisma } from './db.js'
+import type { Prisma } from '../generated/prisma/client.js'
 
 const scryptAsync = (password: string, salt: Buffer, keylen: number, options: { N: number; r: number; p: number; maxmem: number }) => new Promise<Buffer>((resolve, reject) => {
   scryptCallback(password, salt, keylen, options, (error, derived) => error ? reject(error) : resolve(derived as Buffer))
@@ -139,7 +140,7 @@ export function registerAuthRoutes(app: Express) {
       }
 
       const passwordHash = await hashPassword(password)
-      const user = await prisma.$transaction(async tx => {
+      const user = await prisma.$transaction(async (tx: Prisma.TransactionClient) => {
         await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext('techdesk:bootstrap-admin'))`
         const existing = await tx.user.findUnique({ where: { email } })
         if (existing) throw new RegistrationConflictError('E-mail já cadastrado.')
