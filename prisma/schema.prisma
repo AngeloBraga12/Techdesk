@@ -1,10 +1,10 @@
 generator client {
-  provider = "prisma-client-js"
+  provider = "prisma-client"
+  output   = "../generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 model Customer {
@@ -22,17 +22,17 @@ model Customer {
 }
 
 model Equipment {
-  id                String         @id @default(uuid())
-  customerId        String
-  type              String
-  brand             String
-  model             String
-  serialNumber      String?
+  id                 String         @id @default(uuid())
+  customerId         String
+  type               String
+  brand              String
+  model              String
+  serialNumber       String?
   problemDescription String
-  createdAt         DateTime       @default(now())
-  updatedAt         DateTime       @updatedAt
-  customer          Customer       @relation(fields: [customerId], references: [id], onDelete: Restrict)
-  orders            ServiceOrder[]
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+  customer            Customer       @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  orders              ServiceOrder[]
 
   @@index([customerId])
   @@index([serialNumber])
@@ -44,11 +44,11 @@ model ServiceOrder {
   equipmentId String
   issue       String
   diagnosis   String
-  estimate    Decimal                  @default(0) @db.Decimal(12, 2)
+  estimate    Decimal                @default(0) @db.Decimal(12, 2)
   status      String
-  createdAt   DateTime                @default(now())
-  updatedAt   DateTime                @updatedAt
-  customer    Customer                @relation(fields: [customerId], references: [id], onDelete: Restrict)
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  customer    Customer               @relation(fields: [customerId], references: [id], onDelete: Restrict)
   equipment   Equipment               @relation(fields: [equipmentId], references: [id], onDelete: Restrict)
   history     ServiceOrderHistory[]
 
@@ -59,13 +59,13 @@ model ServiceOrder {
 }
 
 model ServiceOrderHistory {
-  id           String       @id @default(uuid())
+  id             String       @id @default(uuid())
   serviceOrderId Int
-  fromStatus   String?
-  toStatus     String
-  note         String?
-  createdAt    DateTime     @default(now())
-  serviceOrder ServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
+  fromStatus     String?
+  toStatus       String
+  note           String?
+  createdAt      DateTime     @default(now())
+  serviceOrder   ServiceOrder @relation(fields: [serviceOrderId], references: [id], onDelete: Cascade)
 
   @@index([serviceOrderId, createdAt])
 }
