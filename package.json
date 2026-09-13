@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc --noEmit && tsc -p tsconfig.server.tsconfig.server.json --noEmit && vite build",
-    "lint": "tsc --noEmit && tsc -p tsconfig.server.tsconfig.server.json --noEmit",
+    "build": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit && vite build",
+    "lint": "tsc --noEmit && tsc -p tsconfig.server.json --noEmit",
     "dev:all": "concurrently \"vite\" \"tsx watch server/index.ts\"",
     "server": "tsx server/index.ts",
     "server:dev": "tsx watch server/index.ts",
