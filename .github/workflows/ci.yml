@@ -137,7 +137,9 @@ jobs:
           grep -q 'Orçamento inválido' /tmp/estimate.json
 
           status=$(curl --silent --output /tmp/uuid.json --write-out '%{http_code}' \
-            http://localhost:3001/api/customers/not-a-uuid)
+            --request PUT http://localhost:3001/api/customers/not-a-uuid \
+            --header 'Content-Type: application/json' \
+            --data '{"name":"Invalid ID test"}')
           assert_status 400 "$status"
           grep -q 'ID de cliente inválido' /tmp/uuid.json
 
@@ -153,12 +155,12 @@ jobs:
           assert_status 404 "$status"
           grep -q 'NOT_FOUND' /tmp/not-found.json
 
-          allowed=$(curl --silent --output /tmp/cors-allowed.txt --write-out '%{http_code}' \
+          allowed=$(curl --silent --output /dev/null --dump-header /tmp/cors-allowed.headers --write-out '%{http_code}' \
             --request OPTIONS http://localhost:3001/api/customers \
             --header 'Origin: http://localhost:5173' \
             --header 'Access-Control-Request-Method: GET')
           assert_status 204 "$allowed"
-          grep -qi '^Access-Control-Allow-Origin: http://localhost:5173' /tmp/cors-allowed.txt
+          grep -qi '^Access-Control-Allow-Origin: http://localhost:5173' /tmp/cors-allowed.headers
 
           blocked=$(curl --silent --output /tmp/cors-blocked.json --write-out '%{http_code}' \
             --request OPTIONS http://localhost:3001/api/customers \
