@@ -1,0 +1,168 @@
+name: Security Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: techdesk
+          POSTGRES_USER: techdesk
+          POSTGRES_PASSWORD: techdesk_ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U techdesk -d techdesk"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      DATABASE_URL: postgresql://techdesk:techdesk_ci_password@localhost:5432/techdesk?schema=public
+      NODE_ENV: test
+      CORS_ORIGINS: http://localhost:5173
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - name: Dependency security audit
+        run: npm audit --audit-level=high
+      - name: Validate database
+        run: npm run db:validate
+      - name: Generate Prisma client
+        run: npm run db:generate
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+      - name: Build application
+        run: npm run build
+      - name: Start API
+        run: npm run server > /tmp/techdesk-security-api.log 2>&1 &
+      - name: Wait for API
+        run: |
+          set -euo pipefail
+          for i in {1..30}; do
+            if curl --fail --silent http://localhost:3001/api/health > /tmp/health.json; then break; fi
+            sleep 1
+          done
+          grep -q '"status":"ok"' /tmp/health.json
+          grep -q '"database":"connected"' /tmp/health.json
+      - name: 1 - Authentication and authorization
+        run: |
+          set -euo pipefail
+          assert_status() { test "$1" = "$2" || { echo "Expected HTTP $1, got $2"; exit 1; }; }
+          status=$(curl --silent --output /tmp/unauth.json --write-out '%{http_code}' http://localhost:3001/api/customers)
+          assert_status 401 "$status"
+          grep -q 'UNAUTHORIZED' /tmp/unauth.json
+          status=$(curl --silent --output /tmp/admin-register.json --write-out '%{http_code}' --request POST http://localhost:3001/api/auth/register --header 'Content-Type: application/json' --data '{"name":"Security Admin","email":"Admin@Example.com","password":"CI-Strong-Password-2026!"}')
+          assert_status 201 "$status"
+          grep -q '"role":"ADMIN"' /tmp/admin-register.json
+          status=$(curl --silent --output /tmp/duplicate.json --write-out '%{http_code}' --request POST http://localhost:3001/api/auth/register --header 'Content-Type: application/json' --data '{"name":"Duplicate","email":"admin@example.com","password":"Another-Strong-Password-2026!"}')
+          assert_status 409 "$status"
+          grep -q 'EMAIL_IN_USE' /tmp/duplicate.json
+          status=$(curl --silent --output /tmp/admin-login.json --dump-header /tmp/admin.headers --write-out '%{http_code}' --cookie-jar /tmp/admin.cookies --request POST http://localhost:3001/api/auth/login --header 'Content-Type: application/json' --data '{"email":"admin@example.com","password":"CI-Strong-Password-2026!"}')
+          assert_status 200 "$status"
+          grep -q '"role":"ADMIN"' /tmp/admin-login.json
+          grep -qi 'HttpOnly' /tmp/admin.headers
+          grep -qi 'SameSite=Strict' /tmp/admin.headers
+          status=$(curl --silent --output /tmp/weak.json --write-out '%{http_code}' --request POST http://localhost:3001/api/auth/register --header 'Content-Type: application/json' --data '{"name":"Weak","email":"weak@example.com","password":"short"}')
+          assert_status 400 "$status"
+          grep -q 'VALIDATION_ERROR' /tmp/weak.json
+          status=$(curl --silent --output /tmp/tech-register.json --write-out '%{http_code}' --request POST http://localhost:3001/api/auth/register --header 'Content-Type: application/json' --data '{"name":"Security Technician","email":"technician@example.com","password":"CI-Technician-Password-2026!"}')
+          assert_status 201 "$status"
+          grep -q '"role":"TECHNICIAN"' /tmp/tech-register.json
+          curl --silent --cookie-jar /tmp/tech.cookies --request POST http://localhost:3001/api/auth/login --header 'Content-Type: application/json' --data '{"email":"technician@example.com","password":"CI-Technician-Password-2026!"}' -o /tmp/tech-login.json
+          status=$(curl --silent --output /tmp/tech-forbidden.json --write-out '%{http_code}' --cookie /tmp/tech.cookies --request DELETE http://localhost:3001/api/customers/00000000-0000-4000-8000-000000000000)
+          assert_status 403 "$status"
+          grep -q 'FORBIDDEN' /tmp/tech-forbidden.json
+      - name: 2 - Session integrity and lifecycle
+        run: |
+          set -euo pipefail
+          assert_status() { test "$1" = "$2" || { echo "Expected HTTP $1, got $2"; exit 1; }; }
+          first_token=$(awk '$6 == "techdesk_session" {print $7}' /tmp/admin.cookies)
+          test -n "$first_token"
+          test "${#first_token}" -ge 40
+          curl --silent --cookie-jar /tmp/admin-second.cookies --request POST http://localhost:3001/api/auth/login --header 'Content-Type: application/json' --data '{"email":"admin@example.com","password":"CI-Strong-Password-2026!"}' -o /tmp/admin-second-login.json
+          second_token=$(awk '$6 == "techdesk_session" {print $7}' /tmp/admin-second.cookies)
+          test -n "$second_token"
+          test "$first_token" != "$second_token"
+          status=$(curl --silent --output /tmp/tampered.json --write-out '%{http_code}' --header 'Cookie: techdesk_session=definitely-invalid-session-token-aaaaaaaaaaaaaaaaaaaaaaaa' http://localhost:3001/api/auth/me)
+          assert_status 401 "$status"
+          grep -q 'UNAUTHORIZED' /tmp/tampered.json
+          session_hash=$(node -e "const fs=require('fs'),crypto=require('crypto'); const line=fs.readFileSync('/tmp/admin-second.cookies','utf8').split(/\n/).find(x=>x.includes('techdesk_session')); const token=line.trim().split(/\s+/).pop(); process.stdout.write(crypto.createHash('sha256').update(token).digest('hex'))")
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "UPDATE \"Session\" SET \"expiresAt\" = NOW() - INTERVAL '1 minute' WHERE \"tokenHash\" = '$session_hash';"
+          status=$(curl --silent --output /tmp/expired.json --write-out '%{http_code}' --cookie /tmp/admin-second.cookies http://localhost:3001/api/auth/me)
+          assert_status 401 "$status"
+          grep -q 'UNAUTHORIZED' /tmp/expired.json
+          status=$(curl --silent --output /tmp/logout.json --write-out '%{http_code}' --cookie /tmp/admin.cookies --request POST http://localhost:3001/api/auth/logout)
+          assert_status 204 "$status"
+          status=$(curl --silent --output /tmp/revoked.json --write-out '%{http_code}' --cookie /tmp/admin.cookies http://localhost:3001/api/auth/me)
+          assert_status 401 "$status"
+      - name: 3 - API integrity and injection resistance
+        run: |
+          set -euo pipefail
+          assert_status() { test "$1" = "$2" || { echo "Expected HTTP $1, got $2"; exit 1; }; }
+          curl --silent --cookie-jar /tmp/admin-fresh.cookies --request POST http://localhost:3001/api/auth/login --header 'Content-Type: application/json' --data '{"email":"admin@example.com","password":"CI-Strong-Password-2026!"}' -o /tmp/admin-fresh.json
+          customer=$(curl --fail --silent --request POST http://localhost:3001/api/customers --cookie /tmp/admin-fresh.cookies --header 'Content-Type: application/json' --data '{"name":"\u0027); DROP TABLE \"Customer\"; --","phone":"(12) 90000-0000","email":"security@example.com"}')
+          customer_id=$(node -e "console.log(JSON.parse(process.argv[1]).id)" "$customer")
+          test -n "$customer_id"
+          curl --fail --silent --cookie /tmp/admin-fresh.cookies http://localhost:3001/api/customers | grep -q 'DROP TABLE'
+          curl --fail --silent --request DELETE "http://localhost:3001/api/customers/$customer_id" --cookie /tmp/admin-fresh.cookies -o /dev/null
+          status=$(curl --silent --output /tmp/bad-id.json --write-out '%{http_code}' --request PUT http://localhost:3001/api/customers/not-a-uuid --cookie /tmp/admin-fresh.cookies --header 'Content-Type: application/json' --data '{"name":"test"}')
+          assert_status 400 "$status"
+          grep -q 'ID de cliente inválido' /tmp/bad-id.json
+          status=$(curl --silent --output /tmp/hacked-status.json --write-out '%{http_code}' --request POST http://localhost:3001/api/orders --cookie /tmp/admin-fresh.cookies --header 'Content-Type: application/json' --data '{"customerId":"00000000-0000-4000-8000-000000000000","equipmentId":"00000000-0000-4000-8000-000000000001","issue":"test","status":"HACKED"}')
+          assert_status 400 "$status"
+          grep -q 'Status da ordem inválido' /tmp/hacked-status.json
+      - name: 4 - Validation, CORS and error boundaries
+        run: |
+          set -euo pipefail
+          assert_status() { test "$1" = "$2" || { echo "Expected HTTP $1, got $2"; exit 1; }; }
+          status=$(curl --silent --output /tmp/invalid-json.json --write-out '%{http_code}' --request POST http://localhost:3001/api/customers --cookie /tmp/admin-fresh.cookies --header 'Content-Type: application/json' --data '{invalid-json')
+          assert_status 400 "$status"
+          grep -q 'INVALID_JSON' /tmp/invalid-json.json
+          status=$(curl --silent --output /tmp/not-found.json --write-out '%{http_code}' --cookie /tmp/admin-fresh.cookies http://localhost:3001/api/does-not-exist)
+          assert_status 404 "$status"
+          grep -q 'NOT_FOUND' /tmp/not-found.json
+          allowed=$(curl --silent --output /dev/null --dump-header /tmp/cors-allowed.headers --write-out '%{http_code}' --request OPTIONS http://localhost:3001/api/customers --header 'Origin: http://localhost:5173' --header 'Access-Control-Request-Method: GET')
+          assert_status 204 "$allowed"
+          grep -qi '^Access-Control-Allow-Origin: http://localhost:5173' /tmp/cors-allowed.headers
+          grep -qi '^Access-Control-Allow-Credentials: true' /tmp/cors-allowed.headers
+          blocked=$(curl --silent --output /tmp/cors-blocked.json --write-out '%{http_code}' --request OPTIONS http://localhost:3001/api/customers --header 'Origin: https://evil.example' --header 'Access-Control-Request-Method: GET')
+          assert_status 403 "$blocked"
+          grep -q 'CORS_FORBIDDEN' /tmp/cors-blocked.json
+          status=$(curl --silent --output /tmp/missing.json --write-out '%{http_code}' --request POST http://localhost:3001/api/customers --cookie /tmp/admin-fresh.cookies --header 'Content-Type: application/json' --data '{}')
+          assert_status 400 "$status"
+          grep -q 'VALIDATION_ERROR' /tmp/missing.json
+      - name: 5 - Security headers and brute-force controls
+        run: |
+          set -euo pipefail
+          assert_status() { test "$1" = "$2" || { echo "Expected HTTP $1, got $2"; exit 1; }; }
+          curl --silent --dump-header /tmp/security.headers http://localhost:3001/api/health -o /tmp/security-health.json
+          grep -qi '^X-Content-Type-Options: nosniff' /tmp/security.headers
+          grep -qi '^X-Frame-Options: DENY' /tmp/security.headers
+          grep -qi '^Referrer-Policy: no-referrer' /tmp/security.headers
+          grep -qi '^Cache-Control: no-store' /tmp/security.headers
+          grep -qi '^Content-Security-Policy: default-src' /tmp/security.headers
+          ! grep -qi '^X-Powered-By:' /tmp/security.headers
+          for i in 1 2 3 4 5; do
+            curl --silent --output /dev/null --request POST http://localhost:3001/api/auth/login --header 'Content-Type: application/json' --data '{"email":"bruteforce@example.com","password":"wrong-password-2026"}' || true
+          done
+          status=$(curl --silent --output /tmp/rate-limit.json --write-out '%{http_code}' --request POST http://localhost:3001/api/auth/login --header 'Content-Type: application/json' --data '{"email":"bruteforce@example.com","password":"wrong-password-2026"}')
+          assert_status 429 "$status"
+          grep -q 'RATE_LIMITED' /tmp/rate-limit.json
+          if grep -Eiq 'stack|prisma|node_modules|at [A-Za-z0-9_./:-]+\(' /tmp/*.json; then
+            echo 'Potential sensitive implementation details leaked in API responses.'
+            exit 1
+          fi
+      - name: Show API log on failure
+        if: failure()
+        run: cat /tmp/techdesk-security-api.log
