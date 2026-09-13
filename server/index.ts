@@ -21,7 +21,7 @@ app.get('/api/customers', async (_req, res) => res.json(await prisma.customer.fi
 app.get('/api/equipment', async (_req, res) => res.json(await prisma.equipment.findMany({ orderBy: { createdAt: 'desc' } })))
 app.get('/api/orders', async (_req, res) => {
   const orders = await prisma.serviceOrder.findMany({ orderBy: { createdAt: 'desc' } })
-  return res.json(orders.map(order => ({ ...order, estimate: Number(order.estimate) })))
+  return res.json(orders.map((order: Awaited<ReturnType<typeof prisma.serviceOrder.findMany>>[number]) => ({ ...order, estimate: Number(order.estimate) })))
 })
 
 app.post('/api/customers', async (req, res) => {
