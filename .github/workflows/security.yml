@@ -26,6 +26,7 @@ jobs:
           --health-retries=20
     env:
       DATABASE_URL: postgresql://techdesk:techdesk_ci_password@localhost:5432/techdesk?schema=public
+      PSQL_DATABASE_URL: postgresql://techdesk:techdesk_ci_password@localhost:5432/techdesk
       NODE_ENV: test
       CORS_ORIGINS: http://localhost:5173
     steps:
@@ -98,7 +99,7 @@ jobs:
           assert_status 401 "$status"
           grep -q 'UNAUTHORIZED' /tmp/tampered.json
           session_hash=$(node -e "const fs=require('fs'),crypto=require('crypto'); const line=fs.readFileSync('/tmp/admin-second.cookies','utf8').split(/\n/).find(x=>x.includes('techdesk_session')); const token=line.trim().split(/\s+/).pop(); process.stdout.write(crypto.createHash('sha256').update(token).digest('hex'))")
-          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -c "UPDATE \"Session\" SET \"expiresAt\" = NOW() - INTERVAL '1 minute' WHERE \"tokenHash\" = '$session_hash';"
+          psql "$PSQL_DATABASE_URL" -v ON_ERROR_STOP=1 -c "UPDATE \"Session\" SET \"expiresAt\" = NOW() - INTERVAL '1 minute' WHERE \"tokenHash\" = '$session_hash';"
           status=$(curl --silent --output /tmp/expired.json --write-out '%{http_code}' --cookie /tmp/admin-second.cookies http://localhost:3001/api/auth/me)
           assert_status 401 "$status"
           grep -q 'UNAUTHORIZED' /tmp/expired.json
