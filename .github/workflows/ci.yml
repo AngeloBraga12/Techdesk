@@ -135,6 +135,14 @@ jobs:
           status=$(curl --silent --output /tmp/me-after-logout.json --write-out '%{http_code}' --cookie /tmp/admin.cookies http://localhost:3001/api/auth/me)
           assert_status 401 "$status"
 
+          status=$(curl --silent --output /tmp/admin-relogin.json --write-out '%{http_code}' \
+            --cookie-jar /tmp/admin.cookies \
+            --request POST http://localhost:3001/api/auth/login \
+            --header 'Content-Type: application/json' \
+            --data '{"email":"admin@example.com","password":"CI-Strong-Password-2026!"}')
+          assert_status 200 "$status"
+          grep -q '"role":"ADMIN"' /tmp/admin-relogin.json
+
       - name: Test API CRUD and history
         run: |
           set -euo pipefail
