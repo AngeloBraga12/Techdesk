@@ -1,12 +1,31 @@
-import express from 'express'
+import express, { type ErrorRequestHandler, type NextFunction, type Request, type Response } from 'express'
 import cors from 'cors'
 import { prisma } from './db.js'
+import {
+  validateCustomerCreate, validateCustomerUpdate, validateEquipmentCreate, validateEquipmentUpdate,
+  validateOrderCreate, validateOrderUpdate, validateOrderIdParam, validateUuidParam,
+} from './validation.js'
 
 const app = express()
 const port = Number(process.env.PORT ?? 3001)
+const isProduction = process.env.NODE_ENV === 'production'
+const allowedOrigins = (process.env.CORS_ORIGINS ?? (isProduction ? '' : 'http://localhost:5173,http://127.0.0.1:5173'))
+  .split(',').map((origin) => origin.trim()).filter(Boolean)
 
-app.use(cors())
-app.use(express.json())
+app.disable('x-powered-by')
+app.use(cors({
+  origin: (origin, callback) => {
+    if (!origin || allowedOrigins.includes(origin)) return callback(null, true)
+    return callback(new Error('CORS origin not allowed.'))
+  },
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  optionsSuccessStatus: 204,
+  maxAge: 600,
+}))
+app.use(express.json({ limit: '1mb', strict: true }))
+
+const badRequest = (res: Response, message: string) => res.status(400).json({ error: 'VALIDATION_ERROR', message })
 
 app.get('/api/health', async (_req, res) => {
   try {
@@ -25,111 +44,146 @@ app.get('/api/orders', async (_req, res) => {
 })
 
 app.post('/api/customers', async (req, res) => {
-  const { name, phone, email } = req.body
-  if (!name || !phone) return res.status(400).json({ message: 'Nome e telefone são obrigatórios.' })
-  const customer = await prisma.customer.create({ data: { name, phone, email: email || null } })
+  const validation = validateCustomerCreate(req.body)
+  if (!validation.ok) return badRequest(res, validation.message)
+  const { name, phone, email } = validation.value
+  const customer = await prisma.customer.create({ data: { name: String(name), phone: String(phone), email: email ? String(email) : null } })
   return res.status(201).json(customer)
 })
 
 app.put('/api/customers/:id', async (req, res) => {
+  if (!validateUuidParam(req.params.id)) return badRequest(res, 'ID de cliente inválido.')
+  const validation = validateCustomerUpdate(req.body)
+  if (!validation.ok) return badRequest(res, validation.message)
   try {
-    return res.json(await prisma.customer.update({ where: { id: req.params.id }, data: req.body }))
-  } catch {
-    return res.status(404).json({ message: 'Cliente não encontrado.' })
+    return res.json(await prisma.customer.update({ where: { id: req.params.id }, data: validation.value }))
+  } catch (error) {
+    if (isPrismaNotFound(error)) return res.status(404).json({ error: 'NOT_FOUND', message: 'Cliente não encontrado.' })
+    throw error
   }
 })
 
 app.delete('/api/customers/:id', async (req, res) => {
+  if (!validateUuidParam(req.params.id)) return badRequest(res, 'ID de cliente inválido.')
   try {
     await prisma.customer.delete({ where: { id: req.params.id } })
     return res.status(204).send()
-  } catch {
-    return res.status(404).json({ message: 'Cliente não encontrado ou possui registros vinculados.' })
+  } catch (error) {
+    if (isPrismaNotFound(error) || isPrismaConstraint(error)) return res.status(404).json({ error: 'NOT_FOUND', message: 'Cliente não encontrado ou possui registros vinculados.' })
+    throw error
   }
 })
 
 app.post('/api/equipment', async (req, res) => {
-  const { customerId, type, brand, model, serialNumber, problemDescription = '' } = req.body
-  if (!customerId || !type || !brand || !model) return res.status(400).json({ message: 'Cliente, tipo, marca e modelo são obrigatórios.' })
+  const validation = validateEquipmentCreate(req.body)
+  if (!validation.ok) return badRequest(res, validation.message)
   try {
-    const item = await prisma.equipment.create({ data: { customerId, type, brand, model, serialNumber: serialNumber || null, problemDescription } })
+    const item = await prisma.equipment.create({ data: validation.value as Parameters<typeof prisma.equipment.create>[0]['data'] })
     return res.status(201).json(item)
-  } catch {
-    return res.status(404).json({ message: 'Cliente não encontrado.' })
+  } catch (error) {
+    if (isPrismaConstraint(error)) return res.status(404).json({ error: 'NOT_FOUND', message: 'Cliente não encontrado.' })
+    throw error
   }
 })
 
 app.put('/api/equipment/:id', async (req, res) => {
+  if (!validateUuidParam(req.params.id)) return badRequest(res, 'ID de equipamento inválido.')
+  const validation = validateEquipmentUpdate(req.body)
+  if (!validation.ok) return badRequest(res, validation.message)
   try {
-    return res.json(await prisma.equipment.update({ where: { id: req.params.id }, data: req.body }))
-  } catch {
-    return res.status(404).json({ message: 'Equipamento não encontrado ou cliente inválido.' })
+    return res.json(await prisma.equipment.update({ where: { id: req.params.id }, data: validation.value as Parameters<typeof prisma.equipment.update>[0]['data'] }))
+  } catch (error) {
+    if (isPrismaNotFound(error) || isPrismaConstraint(error)) return res.status(404).json({ error: 'NOT_FOUND', message: 'Equipamento não encontrado ou cliente inválido.' })
+    throw error
   }
 })
 
 app.delete('/api/equipment/:id', async (req, res) => {
+  if (!validateUuidParam(req.params.id)) return badRequest(res, 'ID de equipamento inválido.')
   try {
     await prisma.equipment.delete({ where: { id: req.params.id } })
     return res.status(204).send()
-  } catch {
-    return res.status(404).json({ message: 'Equipamento não encontrado ou possui ordens vinculadas.' })
+  } catch (error) {
+    if (isPrismaNotFound(error) || isPrismaConstraint(error)) return res.status(404).json({ error: 'NOT_FOUND', message: 'Equipamento não encontrado ou possui ordens vinculadas.' })
+    throw error
   }
 })
 
 app.post('/api/orders', async (req, res) => {
-  const { customerId, equipmentId, issue, diagnosis = '', estimate = 0, status = 'Orçamento' } = req.body
-  if (!customerId || !equipmentId || !issue) return res.status(400).json({ message: 'Cliente, equipamento e problema são obrigatórios.' })
-  const equipment = await prisma.equipment.findFirst({ where: { id: equipmentId, customerId } })
-  if (!equipment) return res.status(404).json({ message: 'Equipamento não encontrado para este cliente.' })
+  const validation = validateOrderCreate(req.body)
+  if (!validation.ok) return badRequest(res, validation.message)
+  const { customerId, equipmentId, issue, diagnosis = '', estimate = 0, status = 'Orçamento' } = validation.value
+  const equipment = await prisma.equipment.findFirst({ where: { id: String(equipmentId), customerId: String(customerId) } })
+  if (!equipment) return res.status(404).json({ error: 'NOT_FOUND', message: 'Equipamento não encontrado para este cliente.' })
 
   const order = await prisma.serviceOrder.create({
     data: {
-      customerId, equipmentId, issue, diagnosis, estimate: Number(estimate) || 0, status,
-      history: { create: { toStatus: status, note: 'Ordem criada.' } },
+      customerId: String(customerId), equipmentId: String(equipmentId), issue: String(issue), diagnosis: String(diagnosis), estimate: Number(estimate), status: String(status),
+      history: { create: { toStatus: String(status), note: 'Ordem criada.' } },
     },
   })
   return res.status(201).json({ ...order, estimate: Number(order.estimate) })
 })
 
 app.put('/api/orders/:id', async (req, res) => {
+  if (!validateOrderIdParam(req.params.id)) return badRequest(res, 'ID de ordem inválido.')
+  const validation = validateOrderUpdate(req.body)
+  if (!validation.ok) return badRequest(res, validation.message)
   const id = Number(req.params.id)
   const current = await prisma.serviceOrder.findUnique({ where: { id } })
-  if (!current) return res.status(404).json({ message: 'Ordem de serviço não encontrada.' })
+  if (!current) return res.status(404).json({ error: 'NOT_FOUND', message: 'Ordem de serviço não encontrada.' })
 
-  const { customerId, equipmentId, issue, diagnosis, estimate, status } = req.body
-  const nextCustomerId = customerId ?? current.customerId
-  const nextEquipmentId = equipmentId ?? current.equipmentId
+  const { customerId, equipmentId, issue, diagnosis, estimate, status } = validation.value
+  const nextCustomerId = String(customerId ?? current.customerId)
+  const nextEquipmentId = String(equipmentId ?? current.equipmentId)
   const equipment = await prisma.equipment.findFirst({ where: { id: nextEquipmentId, customerId: nextCustomerId } })
-  if (!equipment) return res.status(404).json({ message: 'Equipamento não encontrado para este cliente.' })
+  if (!equipment) return res.status(404).json({ error: 'NOT_FOUND', message: 'Equipamento não encontrado para este cliente.' })
 
   const statusChanged = status !== undefined && status !== current.status
   const order = await prisma.serviceOrder.update({
     where: { id },
     data: {
-      customerId: nextCustomerId,
-      equipmentId: nextEquipmentId,
-      issue: issue ?? current.issue,
-      diagnosis: diagnosis ?? current.diagnosis,
-      estimate: estimate === undefined ? current.estimate : Number(estimate) || 0,
-      status: status ?? current.status,
-      ...(statusChanged ? { history: { create: { fromStatus: current.status, toStatus: status } } } : {}),
+      customerId: nextCustomerId, equipmentId: nextEquipmentId,
+      issue: issue === undefined ? current.issue : String(issue), diagnosis: diagnosis === undefined ? current.diagnosis : String(diagnosis),
+      estimate: estimate === undefined ? current.estimate : Number(estimate), status: status === undefined ? current.status : String(status),
+      ...(statusChanged ? { history: { create: { fromStatus: current.status, toStatus: String(status) } } } : {}),
     },
   })
   return res.json({ ...order, estimate: Number(order.estimate) })
 })
 
 app.delete('/api/orders/:id', async (req, res) => {
+  if (!validateOrderIdParam(req.params.id)) return badRequest(res, 'ID de ordem inválido.')
   try {
     await prisma.serviceOrder.delete({ where: { id: Number(req.params.id) } })
     return res.status(204).send()
-  } catch {
-    return res.status(404).json({ message: 'Ordem de serviço não encontrada.' })
+  } catch (error) {
+    if (isPrismaNotFound(error)) return res.status(404).json({ error: 'NOT_FOUND', message: 'Ordem de serviço não encontrada.' })
+    throw error
   }
 })
 
 app.get('/api/orders/:id/history', async (req, res) => {
+  if (!validateOrderIdParam(req.params.id)) return badRequest(res, 'ID de ordem inválido.')
   const history = await prisma.serviceOrderHistory.findMany({ where: { serviceOrderId: Number(req.params.id) }, orderBy: { createdAt: 'asc' } })
   return res.json(history)
 })
+
+app.use((_req, res) => res.status(404).json({ error: 'NOT_FOUND', message: 'Rota não encontrada.' }))
+
+const errorHandler: ErrorRequestHandler = (error, req, res, next) => {
+  if (res.headersSent) return next(error)
+  if (error?.message === 'CORS origin not allowed.') return res.status(403).json({ error: 'CORS_FORBIDDEN', message: 'Origem não autorizada.' })
+  if (error?.type === 'entity.parse.failed') return res.status(400).json({ error: 'INVALID_JSON', message: 'JSON inválido.' })
+  if (error?.type === 'entity.too.large') return res.status(413).json({ error: 'PAYLOAD_TOO_LARGE', message: 'Corpo da requisição excede o limite de 1 MB.' })
+
+  console.error('Unhandled API error', { method: req.method, path: req.path, error })
+  return res.status(500).json({ error: 'INTERNAL_ERROR', message: isProduction ? 'Erro interno do servidor.' : 'Erro interno do servidor. Consulte os logs para detalhes.' })
+}
+app.use(errorHandler)
+
+function isPrismaNotFound(error: unknown) { return isPrismaError(error, 'P2025') }
+function isPrismaConstraint(error: unknown) { return isPrismaError(error, 'P2003') }
+function isPrismaError(error: unknown, code: string) { return typeof error === 'object' && error !== null && 'code' in error && error.code === code }
 
 app.listen(port, () => console.log(`TechDesk API running on http://localhost:${port}`))
