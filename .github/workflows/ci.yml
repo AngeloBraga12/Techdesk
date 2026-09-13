@@ -27,6 +27,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://techdesk:techdesk_ci_password@localhost:5432/techdesk?schema=public
       NODE_ENV: test
+      CORS_ORIGINS: http://localhost:5173
 
     steps:
       - uses: actions/checkout@v4
@@ -42,6 +43,7 @@ jobs:
         run: npm run server > /tmp/techdesk-api.log 2>&1 &
       - name: Test API health
         run: |
+          set -euo pipefail
           for i in {1..30}; do
             if curl --fail --silent http://localhost:3001/api/health > /tmp/health.json; then break; fi
             sleep 1
@@ -101,6 +103,69 @@ jobs:
           curl --fail --silent --request DELETE "http://localhost:3001/api/customers/$customer_id" -o /dev/null
 
           if curl --silent --output /dev/null --write-out '%{http_code}' "http://localhost:3001/api/orders/$order_id" | grep -q '^200$'; then exit 1; fi
+
+      - name: Test validation, CORS and error handling
+        run: |
+          set -euo pipefail
+
+          assert_status() {
+            expected="$1"
+            actual="$2"
+            test "$actual" = "$expected" || { echo "Expected HTTP $expected, got $actual"; exit 1; }
+          }
+
+          status=$(curl --silent --output /tmp/validation.json --write-out '%{http_code}' \
+            --request POST http://localhost:3001/api/customers \
+            --header 'Content-Type: application/json' \
+            --data '{"name":"","phone":"123","unexpected":"blocked"}')
+          assert_status 400 "$status"
+          grep -q 'VALIDATION_ERROR' /tmp/validation.json
+          grep -q 'Campo não permitido: unexpected' /tmp/validation.json
+
+          status=$(curl --silent --output /tmp/status.json --write-out '%{http_code}' \
+            --request POST http://localhost:3001/api/orders \
+            --header 'Content-Type: application/json' \
+            --data '{"customerId":"00000000-0000-4000-8000-000000000000","equipmentId":"00000000-0000-4000-8000-000000000001","issue":"test","status":"HACKED"}')
+          assert_status 400 "$status"
+          grep -q 'Status da ordem inválido' /tmp/status.json
+
+          status=$(curl --silent --output /tmp/estimate.json --write-out '%{http_code}' \
+            --request POST http://localhost:3001/api/orders \
+            --header 'Content-Type: application/json' \
+            --data '{"customerId":"00000000-0000-4000-8000-000000000000","equipmentId":"00000000-0000-4000-8000-000000000001","issue":"test","estimate":-1}')
+          assert_status 400 "$status"
+          grep -q 'Orçamento inválido' /tmp/estimate.json
+
+          status=$(curl --silent --output /tmp/uuid.json --write-out '%{http_code}' \
+            http://localhost:3001/api/customers/not-a-uuid)
+          assert_status 400 "$status"
+          grep -q 'ID de cliente inválido' /tmp/uuid.json
+
+          status=$(curl --silent --output /tmp/json.json --write-out '%{http_code}' \
+            --request POST http://localhost:3001/api/customers \
+            --header 'Content-Type: application/json' \
+            --data '{invalid-json')
+          assert_status 400 "$status"
+          grep -q 'INVALID_JSON' /tmp/json.json
+
+          status=$(curl --silent --output /tmp/not-found.json --write-out '%{http_code}' \
+            http://localhost:3001/api/does-not-exist)
+          assert_status 404 "$status"
+          grep -q 'NOT_FOUND' /tmp/not-found.json
+
+          allowed=$(curl --silent --output /tmp/cors-allowed.txt --write-out '%{http_code}' \
+            --request OPTIONS http://localhost:3001/api/customers \
+            --header 'Origin: http://localhost:5173' \
+            --header 'Access-Control-Request-Method: GET')
+          assert_status 204 "$allowed"
+          grep -qi '^Access-Control-Allow-Origin: http://localhost:5173' /tmp/cors-allowed.txt
+
+          blocked=$(curl --silent --output /tmp/cors-blocked.json --write-out '%{http_code}' \
+            --request OPTIONS http://localhost:3001/api/customers \
+            --header 'Origin: https://evil.example' \
+            --header 'Access-Control-Request-Method: GET')
+          assert_status 403 "$blocked"
+          grep -q 'CORS_FORBIDDEN' /tmp/cors-blocked.json
 
       - name: Show API log on failure
         if: failure()
