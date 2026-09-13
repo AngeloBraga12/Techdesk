@@ -2,7 +2,7 @@ export const orderStatuses = ['Orçamento', 'Em análise', 'Aprovado', 'Em repar
 export type OrderStatus = (typeof orderStatuses)[number]
 
 export type ValidationResult<T> = { ok: true; value: T } | { ok: false; message: string }
-type FieldSpec = { required?: boolean; max?: number; nullable?: boolean }
+type FieldSpec = { required?: boolean; max?: number; nullable?: boolean; number?: boolean }
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === 'object' && value !== null && !Array.isArray(value)
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -23,6 +23,12 @@ function validateObject(body: unknown, specs: Record<string, FieldSpec>, partial
       continue
     }
     if (value === null && spec.nullable) continue
+    if (spec.number) {
+      if (typeof value !== 'number' && typeof value !== 'string') return { ok: false, message: `${key} deve ser um número.` }
+      const numeric = Number(value)
+      if (!Number.isFinite(numeric)) return { ok: false, message: `${key} inválido.` }
+      continue
+    }
     if (typeof value !== 'string') return { ok: false, message: `${key} deve ser texto.` }
     const trimmed = value.trim()
     if (!trimmed && spec.required) return { ok: false, message: `${key} é obrigatório.` }
@@ -30,7 +36,10 @@ function validateObject(body: unknown, specs: Record<string, FieldSpec>, partial
   }
 
   const normalized = { ...body }
-  for (const key of Object.keys(specs)) if (typeof normalized[key] === 'string') normalized[key] = (normalized[key] as string).trim()
+  for (const [key, spec] of Object.entries(specs)) {
+    if (spec.number && normalized[key] !== undefined) normalized[key] = Number(normalized[key])
+    else if (typeof normalized[key] === 'string') normalized[key] = (normalized[key] as string).trim()
+  }
   return { ok: true, value: normalized }
 }
 
@@ -41,7 +50,7 @@ const equipmentSpecs: Record<string, FieldSpec> = {
   customerId: { required: true, max: 36 }, type: { required: true, max: 80 }, brand: { required: true, max: 80 }, model: { required: true, max: 120 }, serialNumber: { max: 120, nullable: true }, problemDescription: { max: 2000 },
 }
 const orderSpecs: Record<string, FieldSpec> = {
-  customerId: { required: true, max: 36 }, equipmentId: { required: true, max: 36 }, issue: { required: true, max: 2000 }, diagnosis: { max: 4000 }, estimate: {}, status: {},
+  customerId: { required: true, max: 36 }, equipmentId: { required: true, max: 36 }, issue: { required: true, max: 2000 }, diagnosis: { max: 4000 }, estimate: { number: true }, status: {},
 }
 
 function validateCommon(result: ValidationResult<Record<string, unknown>>) {
