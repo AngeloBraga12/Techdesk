@@ -104,4 +104,9 @@ jobs:
 
       - name: Show API log on failure
         if: failure()
-        run: cat /tmp/techdesk-api.log
+        run: |
+          if [ -f /tmp/techdesk-api.log ]; then
+            cat /tmp/techdesk-api.log
+          else
+            echo 'API log was not created because the API did not start.'
+          fi
