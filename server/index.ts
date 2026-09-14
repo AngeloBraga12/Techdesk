@@ -10,6 +10,12 @@ import {
 const app = express()
 const port = Number(process.env.PORT ?? 3001)
 const isProduction = process.env.NODE_ENV === 'production'
+const trustProxy = process.env.TRUST_PROXY
+if (trustProxy) {
+  const parsedTrustProxy = Number(trustProxy)
+  if (!Number.isInteger(parsedTrustProxy) || parsedTrustProxy < 1) throw new Error('TRUST_PROXY must be a positive integer when configured.')
+  app.set('trust proxy', parsedTrustProxy)
+}
 const allowedOrigins = (process.env.CORS_ORIGINS ?? (isProduction ? '' : 'http://localhost:5173,http://127.0.0.1:5173')).split(',').map(origin => origin.trim()).filter(Boolean)
 
 app.disable('x-powered-by')
@@ -53,7 +59,7 @@ app.delete('/api/orders/:id', requireRole('ADMIN'), async (req, res) => { const 
 app.get('/api/orders/:id/history', async (req, res) => { const idText = String(req.params.id); if (!validateOrderIdParam(idText)) return badRequest(res, 'ID de ordem inválido.'); return res.json(await prisma.serviceOrderHistory.findMany({ where: { serviceOrderId: Number(idText) }, orderBy: { createdAt: 'asc' } })) })
 
 app.use((_req, res) => res.status(404).json({ error: 'NOT_FOUND', message: 'Rota não encontrada.' }))
-const errorHandler: ErrorRequestHandler = (error, req, res, next) => { if (res.headersSent) return next(error); if (error?.message === 'CORS origin not allowed.') return res.status(403).json({ error: 'CORS_FORBIDDEN', message: 'Origem não autorizada.' }); if (error?.type === 'entity.parse.failed') return res.status(400).json({ error: 'INVALID_JSON', message: 'JSON inválido.' }); if (error?.type === 'entity.too.large') return res.status(413).json({ error: 'PAYLOAD_TOO_LARGE', message: 'Corpo da requisição excede o limite de 1 MB.' }); console.error('Unhandled API error', { method: req.method, path: req.path, error }); return res.status(500).json({ error: 'INTERNAL_ERROR', message: isProduction ? 'Erro interno do servidor.' : 'Erro interno do servidor. Consulte os logs para detalhes.' }) }
+const errorHandler: ErrorRequestHandler = (error, req, res, next) => { if (res.headersSent) return next(error); if (error?.message === 'CORS origin not allowed.') return res.status(403).json({ error: 'CORS_FORBIDDEN', message: 'Origem não autorizada.' }); if (error?.type === 'entity.parse.failed') return res.status(400).json({ error: 'INVALID_JSON', message: 'JSON inválido.' }); if (error?.type === 'entity.too.large') return res.status(413).json({ error: 'PAYLOAD_TOO_LARGE', message: 'Corpo da requisição excede o limite de 1 MB.' }); console.error('Unhandled API error', { method: req.method, path: req.path, error: error instanceof Error ? error.message : 'Unknown error' }); return res.status(500).json({ error: 'INTERNAL_ERROR', message: isProduction ? 'Erro interno do servidor.' : 'Erro interno do servidor. Consulte os logs para detalhes.' }) }
 app.use(errorHandler)
 function isPrismaNotFound(error: unknown) { return isPrismaError(error, 'P2025') }
 function isPrismaConstraint(error: unknown) { return isPrismaError(error, 'P2003') }
