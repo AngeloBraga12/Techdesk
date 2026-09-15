@@ -42,4 +42,45 @@ status=$(curl --silent --output /tmp/techdesk-cors.json --write-out '%{http_code
 assert_status 403 "$status"
 grep -q 'CORS_FORBIDDEN' /tmp/techdesk-cors.json
 
+# Function-level authorization: a technician must not reach administrative endpoints
+# or destructive operations reserved for administrators.
+status=$(curl --silent --output /tmp/techdesk-technician.json --write-out '%{http_code}' \
+  --request POST "$BASE_URL/api/auth/register" \
+  --header 'Content-Type: application/json' \
+  --data '{"name":"Technician","email":"technician@example.com","password":"12345678"}')
+assert_status 201 "$status"
+
+auth_cookie=/tmp/techdesk-technician-cookie.txt
+curl --silent --output /tmp/techdesk-technician-login.json --dump-header /tmp/techdesk-technician-login-headers.txt \
+  --request POST "$BASE_URL/api/auth/login" \
+  --header 'Content-Type: application/json' \
+  --cookie-jar "$auth_cookie" \
+  --data '{"email":"technician@example.com","password":"12345678"}'
+
+grep -q '"role":"TECHNICIAN"' /tmp/techdesk-technician-login.json
+
+status=$(curl --silent --output /tmp/techdesk-admin-users.json --write-out '%{http_code}' \
+  --request GET "$BASE_URL/api/admin/users" \
+  --cookie "$auth_cookie")
+assert_status 403 "$status"
+grep -q 'FORBIDDEN' /tmp/techdesk-admin-users.json
+
+status=$(curl --silent --output /tmp/techdesk-delete-customer.json --write-out '%{http_code}' \
+  --request DELETE "$BASE_URL/api/customers/00000000-0000-0000-0000-000000000000" \
+  --cookie "$auth_cookie")
+assert_status 403 "$status"
+grep -q 'FORBIDDEN' /tmp/techdesk-delete-customer.json
+
+status=$(curl --silent --output /tmp/techdesk-delete-equipment.json --write-out '%{http_code}' \
+  --request DELETE "$BASE_URL/api/equipment/00000000-0000-0000-0000-000000000000" \
+  --cookie "$auth_cookie")
+assert_status 403 "$status"
+grep -q 'FORBIDDEN' /tmp/techdesk-delete-equipment.json
+
+status=$(curl --silent --output /tmp/techdesk-delete-order.json --write-out '%{http_code}' \
+  --request DELETE "$BASE_URL/api/orders/999999999" \
+  --cookie "$auth_cookie")
+assert_status 403 "$status"
+grep -q 'FORBIDDEN' /tmp/techdesk-delete-order.json
+
 echo 'Security regression checks passed.'
