@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type FormEvent } from 'react'
 import { api, type AdminUser } from '../services/api'
 
 type Props = { currentUserId: string; onToast: (message: string) => void }
@@ -18,7 +18,7 @@ export default function AdminPanel({ currentUserId, onToast }: Props) {
 
   useEffect(() => { void loadUsers() }, [])
 
-  async function createUser(event: React.FormEvent) {
+  async function createUser(event: FormEvent) {
     event.preventDefault()
     setSaving(true)
     try {
@@ -55,8 +55,8 @@ export default function AdminPanel({ currentUserId, onToast }: Props) {
       </form>
 
       <section className="panel page-panel">
-        <div className="panel-head"><div><h2>Usuários</h2><p className="muted">Administradores não podem ser desativados por esta tela.</p></div><button className="secondary" onClick={() => void loadUsers()}>Atualizar</button></div>
-        {loading ? <p className="empty">Carregando usuários…</p> : <div className="table-wrap"><table><thead><tr><th>Usuário</th><th>Perfil</th><th>Status</th><th>Ação</th></tr></thead><tbody>{users.map(user => <tr key={user.id}><td><strong>{user.name}</strong><br /><span className="muted">{user.email}</span></td><td>{user.role === 'ADMIN' ? 'Administrador' : 'Técnico'}</td><td><span className={`admin-status ${user.active ? 'active' : 'inactive'}`}>{user.active ? 'Ativo' : 'Inativo'}</span></td><td>{user.role === 'TECHNICIAN' && user.id !== currentUserId ? <button className="text-button" onClick={() => void toggleUser(user)}>{user.active ? 'Desativar' : 'Ativar'}</button> : <span className="muted">Protegido</span>}</td></tr>)}</tbody></table></div>}
+        <div className="panel-head"><div><h2>Usuários</h2><p className="muted">Administradores ficam protegidos nesta tela.</p></div><button className="secondary" type="button" onClick={() => void loadUsers()}>Atualizar</button></div>
+        {loading ? <p className="empty">Carregando usuários…</p> : <div className="table-wrap"><table><thead><tr><th>Usuário</th><th>Perfil</th><th>Status</th><th>Ação</th></tr></thead><tbody>{users.map(user => <tr key={user.id}><td><strong>{user.name}</strong><br /><span className="muted">{user.email}</span></td><td>{user.role === 'ADMIN' ? 'Administrador' : 'Técnico'}</td><td><span className={`admin-status ${user.active ? 'active' : 'inactive'}`}>{user.active ? 'Ativo' : 'Inativo'}</span></td><td>{user.role === 'TECHNICIAN' && user.id !== currentUserId ? <button className="text-button" type="button" onClick={() => void toggleUser(user)}>{user.active ? 'Desativar' : 'Ativar'}</button> : <span className="muted">Protegido</span>}</td></tr>)}</tbody></table></div>}
       </section>
     </section>
   </>
