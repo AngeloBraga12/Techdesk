@@ -1,7 +1,7 @@
 import express, { type ErrorRequestHandler, type Response } from 'express'
 import cors from 'cors'
 import { prisma } from './db.js'
-import { authenticate, registerAuthRoutes, requireRole } from './auth.js'
+import { authenticate, registerAdminRoutes, registerAuthRoutes, requireRole } from './auth.js'
 import {
   validateCustomerCreate, validateCustomerUpdate, validateEquipmentCreate, validateEquipmentUpdate,
   validateOrderCreate, validateOrderUpdate, validateOrderIdParam, validateUuidParam,
@@ -31,7 +31,7 @@ app.use((_req, res, next) => {
 app.use(cors({
   origin: (origin, callback) => { if (!origin || allowedOrigins.includes(origin)) return callback(null, true); return callback(new Error('CORS origin not allowed.')) },
   credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization'], optionsSuccessStatus: 204, maxAge: 600,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'], allowedHeaders: ['Content-Type', 'Authorization', 'X-Bootstrap-Token'], optionsSuccessStatus: 204, maxAge: 600,
 }))
 app.use(express.json({ limit: '1mb', strict: true }))
 const badRequest = (res: Response, message: string) => res.status(400).json({ error: 'VALIDATION_ERROR', message })
@@ -39,6 +39,7 @@ const badRequest = (res: Response, message: string) => res.status(400).json({ er
 registerAuthRoutes(app)
 app.get('/api/health', async (_req, res) => { try { await prisma.$queryRaw`SELECT 1`; return res.json({ status: 'ok', service: 'TechDesk API', database: 'connected' }) } catch { return res.status(503).json({ status: 'error', service: 'TechDesk API', database: 'unavailable' }) } })
 app.use('/api', authenticate)
+registerAdminRoutes(app)
 
 app.get('/api/customers', async (_req, res) => res.json(await prisma.customer.findMany({ orderBy: { createdAt: 'desc' } })))
 app.get('/api/equipment', async (_req, res) => res.json(await prisma.equipment.findMany({ orderBy: { createdAt: 'desc' } })))
