@@ -3,7 +3,10 @@ import type { Customer, Equipment, ServiceOrder } from '../types'
 export type AuthUser = { id: string; name: string; email: string; role: 'ADMIN' | 'TECHNICIAN' }
 export type AdminUser = { id: string; name: string; email: string; role: 'ADMIN' | 'TECHNICIAN'; active: boolean; createdAt: string }
 
-const API_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:3001/api').replace(/\/$/, '')
+// Production uses the same-origin /api rewrite handled by Netlify.
+// A localhost URL here would make the deployed frontend try to reach the
+// user's own computer, producing the browser's generic "Failed to fetch".
+const API_URL = (import.meta.env.VITE_API_URL ?? '/api').replace(/\/$/, '')
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
