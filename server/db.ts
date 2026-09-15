@@ -1,11 +1,13 @@
-import { getConnectionString } from '@netlify/database'
 import { PrismaPg } from '@prisma/adapter-pg'
 import { PrismaClient } from '../generated/prisma/client.js'
 
-const connectionString = process.env.DATABASE_URL ?? process.env.NETLIFY_DB_URL ?? getConnectionString()
+// Netlify Functions run through Lambda compatibility. In that runtime the
+// database connection must be supplied explicitly to the Postgres adapter.
+// NETLIFY_DB_URL is automatically exposed by Netlify Database to Functions.
+const connectionString = process.env.NETLIFY_DB_URL ?? process.env.DATABASE_URL
 
 if (!connectionString) {
-  throw new Error('A database connection string is required to initialize Prisma.')
+  throw new Error('Database connection is not configured. NETLIFY_DB_URL or DATABASE_URL is required.')
 }
 
 const adapter = new PrismaPg({ connectionString })
