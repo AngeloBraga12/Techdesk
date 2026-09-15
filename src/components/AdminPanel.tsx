@@ -49,7 +49,7 @@ export default function AdminPanel({ currentUserId, onToast }: Props) {
         <div className="admin-form-body">
           <label>Nome<input required minLength={2} maxLength={120} value={form.name} onChange={event => setForm({ ...form, name: event.target.value })} /></label>
           <label>E-mail<input required type="email" maxLength={254} value={form.email} onChange={event => setForm({ ...form, email: event.target.value })} /></label>
-          <label>Senha<input required minLength={12} maxLength={128} type="password" value={form.password} onChange={event => setForm({ ...form, password: event.target.value })} /><small>Use pelo menos 12 caracteres.</small></label>
+          <label>Senha<input required minLength={8} maxLength={128} type="password" value={form.password} onChange={event => setForm({ ...form, password: event.target.value })} /><small>Use pelo menos 8 caracteres.</small></label>
           <button className="primary" disabled={saving}>{saving ? 'Criando…' : 'Criar técnico'}</button>
         </div>
       </form>
