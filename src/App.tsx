@@ -29,7 +29,7 @@ export default function App() {
   const [setupMode, setSetupMode] = useState(() => window.location.pathname === '/setup')
 
   useEffect(() => {
-    api.auth.me().then(result => setUser(result.user)).catch(() => setUser(null)).finally(() => setAuthChecking(false))
+    api.auth.me().then(result => { setUser(result.user); setSetupMode(false) }).catch(() => setUser(null)).finally(() => setAuthChecking(false))
   }, [])
 
   useEffect(() => writeStorage(customerKey, customers), [customers])
