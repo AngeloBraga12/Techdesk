@@ -8,7 +8,7 @@ const scryptAsync = (password: string, salt: Buffer, keylen: number, options: { 
 })
 const SESSION_COOKIE = 'techdesk_session'
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000
-const PASSWORD_MIN = 12
+const PASSWORD_MIN = 8
 const PASSWORD_MAX = 128
 const SCRYPT_N = 131072
 const SCRYPT_R = 8
