@@ -29,7 +29,35 @@ export default function App() {
   const [setupMode, setSetupMode] = useState(() => window.location.pathname === '/setup')
 
   useEffect(() => {
-    api.auth.me().then(result => { setUser(result.user); setSetupMode(false) }).catch(() => setUser(null)).finally(() => setAuthChecking(false))
+    let active = true
+    async function checkInitialState() {
+      try {
+        const session = await api.auth.me()
+        if (!active) return
+        setUser(session.user)
+        setSetupMode(false)
+        if (window.location.pathname === '/setup') window.history.replaceState({}, '', '/')
+        return
+      } catch {
+        // No active session is expected on the login/setup screen.
+      }
+
+      try {
+        const status = await api.auth.setupStatus()
+        if (!active) return
+        const needsSetup = status.setupRequired
+        setSetupMode(needsSetup)
+        if (needsSetup && window.location.pathname !== '/setup') window.history.replaceState({}, '', '/setup')
+        if (!needsSetup && window.location.pathname === '/setup') window.history.replaceState({}, '', '/')
+      } catch {
+        // If the status check fails, keep the normal login flow available rather than exposing setup by default.
+        if (active) setSetupMode(false)
+      } finally {
+        if (active) setAuthChecking(false)
+      }
+    }
+    void checkInitialState()
+    return () => { active = false }
   }, [])
 
   useEffect(() => writeStorage(customerKey, customers), [customers])
@@ -99,7 +127,7 @@ export default function App() {
     setView('dashboard')
   }
 
-  if (authChecking && !setupMode) return <main className="login-screen"><p className="muted">Verificando sessão…</p></main>
+  if (authChecking) return <main className="login-screen"><p className="muted">Verificando configuração e sessão…</p></main>
   if (setupMode && !user) return <SetupAdmin onComplete={() => { window.history.replaceState({}, '', '/'); setSetupMode(false) }} />
   if (!user) return <Login onAuthenticated={setUser} />
 
