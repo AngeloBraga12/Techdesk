@@ -57,6 +57,9 @@ jobs:
           status=$(curl --silent --output /tmp/unauth.json --write-out '%{http_code}' http://localhost:3001/api/customers)
           assert_status 401 "$status"
           grep -q 'UNAUTHORIZED' /tmp/unauth.json
+          status=$(curl --silent --output /tmp/bootstrap-forbidden.json --write-out '%{http_code}' --request POST http://localhost:3001/api/auth/bootstrap --header 'Content-Type: application/json' --data '{"name":"Blocked","email":"blocked@example.com","password":"CI-Strong-Password-2026!"}')
+          assert_status 403 "$status"
+          grep -q 'BOOTSTRAP_FORBIDDEN' /tmp/bootstrap-forbidden.json
           status=$(curl --silent --output /tmp/weak-password.json --write-out '%{http_code}' --request POST http://localhost:3001/api/auth/register --header 'Content-Type: application/json' --data '{"name":"Weak","email":"weak@example.com","password":"short"}')
           assert_status 400 "$status"
           grep -q 'VALIDATION_ERROR' /tmp/weak-password.json
@@ -80,9 +83,23 @@ jobs:
           grep -q '"role":"TECHNICIAN"' /tmp/tech-register.json
           status=$(curl --silent --output /tmp/tech-login.json --write-out '%{http_code}' --cookie-jar /tmp/tech.cookies --request POST http://localhost:3001/api/auth/login --header 'Content-Type: application/json' --data '{"email":"technician@example.com","password":"CI-Technician-Password-2026!"}')
           assert_status 200 "$status"
-          status=$(curl --silent --output /tmp/forbidden.json --write-out '%{http_code}' --cookie /tmp/tech.cookies http://localhost:3001/api/customers/00000000-0000-4000-8000-000000000000 --request DELETE)
+          status=$(curl --silent --output /tmp/admin-users.json --write-out '%{http_code}' --cookie /tmp/admin.cookies http://localhost:3001/api/admin/users)
+          assert_status 200 "$status"
+          grep -q 'admin@example.com' /tmp/admin-users.json
+          grep -q 'technician@example.com' /tmp/admin-users.json
+          status=$(curl --silent --output /tmp/tech-admin-forbidden.json --write-out '%{http_code}' --cookie /tmp/tech.cookies http://localhost:3001/api/admin/users)
           assert_status 403 "$status"
-          grep -q 'FORBIDDEN' /tmp/forbidden.json
+          grep -q 'FORBIDDEN' /tmp/tech-admin-forbidden.json
+          tech_id=$(node -e "const users=JSON.parse(require('fs').readFileSync('/tmp/admin-users.json','utf8')); console.log(users.find(user => user.email === 'technician@example.com').id)")
+          status=$(curl --silent --output /tmp/admin-user-disabled.json --write-out '%{http_code}' --request PATCH "http://localhost:3001/api/admin/users/$tech_id" --cookie /tmp/admin.cookies --header 'Content-Type: application/json' --data '{"active":false}')
+          assert_status 200 "$status"
+          grep -q '"active":false' /tmp/admin-user-disabled.json
+          status=$(curl --silent --output /tmp/disabled-login.json --write-out '%{http_code}' --request POST http://localhost:3001/api/auth/login --header 'Content-Type: application/json' --data '{"email":"technician@example.com","password":"CI-Technician-Password-2026!"}')
+          assert_status 401 "$status"
+          grep -q 'INVALID_CREDENTIALS' /tmp/disabled-login.json
+          status=$(curl --silent --output /tmp/self-disable.json --write-out '%{http_code}' --request PATCH "http://localhost:3001/api/admin/users/$(node -e "const x=JSON.parse(require('fs').readFileSync('/tmp/admin-users.json')); console.log(x.find(u=>u.email==='admin@example.com').id)")" --cookie /tmp/admin.cookies --header 'Content-Type: application/json' --data '{"active":false}')
+          assert_status 400 "$status"
+          grep -q 'SELF_DEACTIVATION_FORBIDDEN' /tmp/self-disable.json
           status=$(curl --silent --output /tmp/logout.out --write-out '%{http_code}' --cookie /tmp/admin.cookies --request POST http://localhost:3001/api/auth/logout)
           assert_status 204 "$status"
           status=$(curl --silent --output /tmp/me-after-logout.json --write-out '%{http_code}' --cookie /tmp/admin.cookies http://localhost:3001/api/auth/me)
