@@ -1,6 +1,7 @@
 import type { Customer, Equipment, ServiceOrder } from '../types'
 
 export type AuthUser = { id: string; name: string; email: string; role: 'ADMIN' | 'TECHNICIAN' }
+export type AdminUser = { id: string; name: string; email: string; role: 'ADMIN' | 'TECHNICIAN'; active: boolean; createdAt: string }
 
 const API_URL = (import.meta.env.VITE_API_URL ?? 'http://localhost:3001/api').replace(/\/$/, '')
 
@@ -27,6 +28,12 @@ export const api = {
     login: (email: string, password: string) => request<{ user: AuthUser }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
     logout: () => request<void>('/auth/logout', { method: 'POST' }),
     register: (name: string, email: string, password: string) => request<{ user: AuthUser; bootstrapAdmin: boolean }>('/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password }) }),
+    bootstrap: (token: string, name: string, email: string, password: string) => request<{ user: AuthUser; bootstrapAdmin: boolean }>('/auth/bootstrap', { method: 'POST', headers: { 'X-Bootstrap-Token': token }, body: JSON.stringify({ name, email, password }) }),
+  },
+  admin: {
+    users: () => request<AdminUser[]>('/admin/users'),
+    createUser: (name: string, email: string, password: string) => request<AdminUser>('/admin/users', { method: 'POST', body: JSON.stringify({ name, email, password }) }),
+    setUserActive: (id: string, active: boolean) => request<AdminUser>(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify({ active }) }),
   },
   customers: {
     list: () => request<Customer[]>('/customers'),
