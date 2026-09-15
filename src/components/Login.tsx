@@ -24,7 +24,7 @@ export default function Login({ onAuthenticated }: Props) {
       <p className="muted">Use sua conta para acessar clientes, equipamentos e ordens de serviço.</p>
       <form className="login-form" onSubmit={submit}>
         <label>E-mail<input type="email" autoComplete="username" value={email} onChange={event => setEmail(event.target.value)} required maxLength={254} /></label>
-        <label>Senha<input type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} required minLength={12} maxLength={128} /></label>
+        <label>Senha<input type="password" autoComplete="current-password" value={password} onChange={event => setPassword(event.target.value)} required minLength={8} maxLength={128} /></label>
         {error && <p className="login-error" role="alert">{error}</p>}
         <button className="primary" type="submit" disabled={loading}>{loading ? 'Entrando…' : 'Entrar'}</button>
       </form>
