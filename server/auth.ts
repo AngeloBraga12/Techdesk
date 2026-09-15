@@ -130,6 +130,17 @@ export function requireRole(...roles: AuthUser['role'][]) {
 }
 
 export function registerAuthRoutes(app: Express) {
+  app.get('/api/auth/setup-status', async (_req, res, next) => {
+    try {
+      const setupRequired = await prisma.user.count() === 0
+      return res.json({ setupRequired })
+    } catch (error) {
+      return next(error)
+    }
+  })
+
+  app.get('/api/auth/bootstrap', (_req, res) => res.status(405).setHeader('Allow', 'POST').json({ error: 'METHOD_NOT_ALLOWED', message: 'O bootstrap administrativo deve ser enviado como POST. Use a tela de primeira configuração do TechDesk.' }))
+
   app.post('/api/auth/bootstrap', async (req, res, next) => {
     try {
       const configuredToken = process.env.AUTH_BOOTSTRAP_TOKEN
