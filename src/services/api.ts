@@ -25,6 +25,7 @@ export const api = {
   health: () => request<{ status: string; service: string; database?: string }>('/health'),
   auth: {
     me: () => request<{ user: AuthUser }>('/auth/me'),
+    setupStatus: () => request<{ setupRequired: boolean }>('/auth/setup-status'),
     login: (email: string, password: string) => request<{ user: AuthUser }>('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
     logout: () => request<void>('/auth/logout', { method: 'POST' }),
     register: (name: string, email: string, password: string) => request<{ user: AuthUser; bootstrapAdmin: boolean }>('/auth/register', { method: 'POST', body: JSON.stringify({ name, email, password }) }),
