@@ -1,0 +1,55 @@
+name: Security Regression
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: techdesk
+          POSTGRES_USER: techdesk
+          POSTGRES_PASSWORD: techdesk_ci_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U techdesk -d techdesk"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    env:
+      DATABASE_URL: postgresql://techdesk:techdesk_ci_password@localhost:5432/techdesk?schema=public
+      NODE_ENV: test
+      CORS_ORIGINS: http://localhost:5173
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install
+      - run: npm run db:validate
+      - run: npm run db:generate
+      - run: npx prisma migrate deploy
+      - run: npm run build
+      - name: Start API
+        run: npm run server > /tmp/techdesk-api.log 2>&1 &
+      - name: Wait for API
+        run: |
+          set -euo pipefail
+          for i in {1..30}; do
+            if curl --fail --silent http://localhost:3001/api/health >/dev/null; then exit 0; fi
+            sleep 1
+          done
+          cat /tmp/techdesk-api.log
+          exit 1
+      - name: Run security regression checks
+        run: bash scripts/security-regression.sh
+      - name: Show API log on failure
+        if: failure()
+        run: cat /tmp/techdesk-api.log
