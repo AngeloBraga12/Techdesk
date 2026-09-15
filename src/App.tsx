@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react'
+import AdminPanel from './components/AdminPanel'
 import Dashboard from './components/Dashboard'
 import Customers from './components/Customers'
 import Equipment from './components/Equipment'
 import Login from './components/Login'
 import OrderForm from './components/OrderForm'
 import ServiceOrders from './components/ServiceOrders'
+import SetupAdmin from './components/SetupAdmin'
 import { customers as seedCustomers, equipment as seedEquipment, serviceOrders as seedOrders } from './data/mock'
 import { readStorage, writeStorage } from './utils/storage'
 import { api, type AuthUser } from './services/api'
 import type { Customer, Equipment as EquipmentType, OrderStatus, ServiceOrder } from './types'
 
-type View = 'dashboard' | 'orders' | 'customers' | 'equipment'
+type View = 'dashboard' | 'orders' | 'customers' | 'equipment' | 'admin'
 const customerKey = 'techdesk:customers'
 const equipmentKey = 'techdesk:equipment'
 const ordersKey = 'techdesk:orders'
@@ -24,6 +26,7 @@ export default function App() {
   const [orders, setOrders] = useState<ServiceOrder[]>(() => readStorage(ordersKey, seedOrders))
   const [orderForm, setOrderForm] = useState<ServiceOrder | null | false>(false)
   const [toast, setToast] = useState('')
+  const [setupMode, setSetupMode] = useState(() => window.location.pathname === '/setup')
 
   useEffect(() => {
     api.auth.me().then(result => setUser(result.user)).catch(() => setUser(null)).finally(() => setAuthChecking(false))
@@ -93,25 +96,29 @@ export default function App() {
   async function logout() {
     await api.auth.logout().catch(() => undefined)
     setUser(null)
+    setView('dashboard')
   }
 
-  if (authChecking) return <main className="login-screen"><p className="muted">Verificando sessão…</p></main>
+  if (authChecking && !setupMode) return <main className="login-screen"><p className="muted">Verificando sessão…</p></main>
+  if (setupMode && !user) return <SetupAdmin onComplete={() => { window.history.replaceState({}, '', '/'); setSetupMode(false) }} />
   if (!user) return <Login onAuthenticated={setUser} />
 
   const nav = (next: View) => setView(next)
-  const pageTitle = { dashboard: 'Visão geral', orders: 'Ordens de serviço', customers: 'Clientes', equipment: 'Equipamentos' }[view]
+  const pageTitle = { dashboard: 'Visão geral', orders: 'Ordens de serviço', customers: 'Clientes', equipment: 'Equipamentos', admin: 'Administração' }[view]
   return <div className="app">
     <aside className="sidebar"><div className="brand"><span className="brand-mark">T</span><span>tech<span>desk</span></span></div><nav aria-label="Navegação principal">
       <button className={view === 'dashboard' ? 'active' : ''} onClick={() => nav('dashboard')}>Visão geral</button>
       <button className={view === 'orders' ? 'active' : ''} onClick={() => nav('orders')}>Ordens de serviço</button>
       <button className={view === 'customers' ? 'active' : ''} onClick={() => nav('customers')}>Clientes</button>
       <button className={view === 'equipment' ? 'active' : ''} onClick={() => nav('equipment')}>Equipamentos</button>
+      {user.role === 'ADMIN' && <button className={view === 'admin' ? 'active' : ''} onClick={() => nav('admin')}>Administração</button>}
     </nav><div className="sidebar-bottom"><div className="mini-user"><span>{user.name.split(' ').map(part => part[0]).slice(0, 2).join('').toUpperCase()}</span><div><strong>{user.name}</strong><small>{user.role === 'ADMIN' ? 'Administrador' : 'Técnico'}</small></div></div><button className="secondary" onClick={() => void logout()}>Sair</button></div></aside>
     <main className="main"><div className="mobile-heading"><p className="eyebrow">TechDesk</p><h1>{pageTitle}</h1></div>
       {view === 'dashboard' && <Dashboard orders={orders} customers={customers} onNewOrder={() => setOrderForm(null)} />}
       {view === 'orders' && <><header className="topbar compact"><div><p className="eyebrow">Operação</p><h1>Ordens de serviço</h1><p className="muted">Crie, edite e acompanhe cada atendimento.</p></div><button className="primary" onClick={() => setOrderForm(null)}>+ Nova ordem</button></header><ServiceOrders orders={orders} customers={customers} equipment={equipment} onEdit={setOrderForm} onDelete={deleteOrder} onStatus={updateStatus} /></>}
       {view === 'customers' && <><header className="topbar compact"><div><p className="eyebrow">Cadastro</p><h1>Clientes</h1></div></header><Customers customers={customers} onAdd={addCustomer} /></>}
       {view === 'equipment' && <><header className="topbar compact"><div><p className="eyebrow">Inventário</p><h1>Equipamentos</h1></div></header><Equipment customers={customers} equipment={equipment} onAdd={addEquipment} /></>}
+      {view === 'admin' && user.role === 'ADMIN' && <AdminPanel currentUserId={user.id} onToast={setToast} />}
     </main>
     {orderForm !== false && <OrderForm customers={customers} equipment={equipment} order={orderForm || undefined} onSave={saveOrder} onClose={() => setOrderForm(false)} />}
     {toast && <div className="toast" role="status">{toast}</div>}
