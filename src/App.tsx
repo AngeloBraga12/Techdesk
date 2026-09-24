@@ -7,23 +7,17 @@ import Login from './components/Login'
 import OrderForm from './components/OrderForm'
 import ServiceOrders from './components/ServiceOrders'
 import SetupAdmin from './components/SetupAdmin'
-import { customers as seedCustomers, equipment as seedEquipment, serviceOrders as seedOrders } from './data/mock'
-import { readStorage, writeStorage } from './utils/storage'
 import { api, type AuthUser } from './services/api'
 import type { Customer, Equipment as EquipmentType, OrderStatus, ServiceOrder } from './types'
 
 type View = 'dashboard' | 'orders' | 'customers' | 'equipment' | 'admin'
-const customerKey = 'techdesk:customers'
-const equipmentKey = 'techdesk:equipment'
-const ordersKey = 'techdesk:orders'
-
 export default function App() {
   const [user, setUser] = useState<AuthUser | null>(null)
   const [authChecking, setAuthChecking] = useState(true)
   const [view, setView] = useState<View>('dashboard')
-  const [customers, setCustomers] = useState<Customer[]>(() => readStorage(customerKey, seedCustomers))
-  const [equipment, setEquipment] = useState<EquipmentType[]>(() => readStorage(equipmentKey, seedEquipment))
-  const [orders, setOrders] = useState<ServiceOrder[]>(() => readStorage(ordersKey, seedOrders))
+  const [customers, setCustomers] = useState<Customer[]>([])
+  const [equipment, setEquipment] = useState<EquipmentType[]>([])
+  const [orders, setOrders] = useState<ServiceOrder[]>([])
   const [orderForm, setOrderForm] = useState<ServiceOrder | null | false>(false)
   const [toast, setToast] = useState('')
   const [setupMode, setSetupMode] = useState(() => window.location.pathname === '/setup')
@@ -60,9 +54,6 @@ export default function App() {
     return () => { active = false }
   }, [])
 
-  useEffect(() => writeStorage(customerKey, customers), [customers])
-  useEffect(() => writeStorage(equipmentKey, equipment), [equipment])
-  useEffect(() => writeStorage(ordersKey, orders), [orders])
   useEffect(() => { if (!toast) return; const timer = window.setTimeout(() => setToast(''), 2500); return () => window.clearTimeout(timer) }, [toast])
 
   useEffect(() => {
