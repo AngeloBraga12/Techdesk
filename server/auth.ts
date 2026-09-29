@@ -6,7 +6,7 @@ import type { Prisma } from '../generated/prisma/client.js'
 const scryptAsync = (password: string, salt: Buffer, keylen: number, options: { N: number; r: number; p: number; maxmem: number }) => new Promise<Buffer>((resolve, reject) => {
   scryptCallback(password, salt, keylen, options, (error, derived) => error ? reject(error) : resolve(derived as Buffer))
 })
-const SESSION_COOKIE = 'techdesk_session'
+const SESSION_COOKIE = process.env.NODE_ENV === 'production' ? '__Host-techdesk_session' : 'techdesk_session'
 const SESSION_TTL_MS = 8 * 60 * 60 * 1000
 const PASSWORD_MIN = 8
 const PASSWORD_MAX = 128
